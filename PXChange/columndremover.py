@@ -1,7 +1,7 @@
 import pandas as pd
 
 # Path to the input CSV file
-input_file = 'filtered_182625.csv'  # Replace with your file path
+input_file = 'PXChange/filtered_182625.csv'  # Replace with your file path
 output_file = 'Time_difference_gen_data.csv'  # File to save the filtered dataset
 
 # Specify the columns to keep

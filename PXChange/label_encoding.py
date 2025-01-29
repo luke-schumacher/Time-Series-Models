@@ -17,7 +17,7 @@ BODYGROUP_ENCODING_LEGEND = {
 }
 
 # Load your dataset
-data = pd.read_csv('Final_182625_SN.csv')
+data = pd.read_csv('PXChange/Time_difference_gen_data.csv')
 
 # Map the encoding legends to the relevant columns
 data['sourceID'] = data['sourceID'].map(SOURCEID_ENCODING_LEGEND)
@@ -32,7 +32,7 @@ if data[['sourceID', 'BodyGroup_from', 'BodyGroup_to']].isnull().any().any():
 
 # Normalize numerical columns
 scaler = MinMaxScaler()
-data[['timediff']] = scaler.fit_transform(data[['timediff']])
+data[['PTAB']] = scaler.fit_transform(data[['PTAB']])
 
 # Save the normalized, encoded data to a CSV file
 output_path = "encoded_normalized_data.csv"
