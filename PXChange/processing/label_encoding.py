@@ -30,12 +30,9 @@ if data[['sourceID', 'BodyGroup_from', 'BodyGroup_to']].isnull().any().any():
     # Handle unmapped values (e.g., fill with 0 or another default value)
     data.fillna(0, inplace=True)
 
-# Normalize numerical columns
-scaler = MinMaxScaler()
-data[['PTAB']] = scaler.fit_transform(data[['PTAB']])
 
 # Save the normalized, encoded data to a CSV file
-output_path = "encoded_normalized_data.csv"
+output_path = "PXChange/encoded_normalized_data.csv"
 data.to_csv(output_path, index=False)
 
 print(f"Encoded and normalized data saved to {output_path}")
