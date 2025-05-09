@@ -1,8 +1,8 @@
 import pandas as pd
 
 # Path to the input CSV file
-input_file = 'PXChange/encoded_175974.csv'  # Replace with your file path
-output_file = 'PXChange/encoded_175974_condensed.csv'  # File to save the filtered dataset
+input_file = 'PXChange/data/182625/filtered_182625.csv'  # Replace with your file path
+output_file = 'PXChange/data/182625/encoded_182625_condensed.csv'  # File to save the filtered dataset
 
 # Specify the columns to keep
 columns_to_keep = ['sourceID', 'timediff', 'PTAB', 'BodyGroup_from', 'BodyGroup_to']

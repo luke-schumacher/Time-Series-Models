@@ -4,16 +4,16 @@ import pandas as pd
 # from sklearn.preprocessing import MinMaxScaler
 
 # --- Configuration ---
-INPUT_CSV_PATH = 'PXCHange/processing/filtered_175974.csv'
-OUTPUT_CSV_PATH = "PXChange/encoded_175974.csv" # Changed output name slightly
+INPUT_CSV_PATH = 'PXChange/data/182625/filtered_182625.csv'
+OUTPUT_CSV_PATH = "PXChange/data/182625/encoded_182625.csv" 
 
 # Define the encoding legend for sourceID
 SOURCEID_ENCODING_LEGEND = {
     'MRI_CCS_11': 1, 'MRI_EXU_95': 2, 'MRI_FRR_18': 3, 'MRI_FRR_257': 4,
     'MRI_FRR_264': 5, 'MRI_FRR_2': 6, 'MRI_FRR_3': 7, 'MRI_FRR_34': 8, 'MRI_MPT_1005': 9,
-    'MRI_MSR_100': 10, 'MRI_MSR_104': 11, 'MRI_MSR_21': 12, 'MRI_MSR_34': 13,
-    'START': 14,  # Start token
-    'END': 15  # End Token
+    'MRI_MSR_100': 10, 'MRI_MSR_104': 11, 'MRI_MSR_21': 12, 
+    'START': 13,  # Start token
+    'END': 14  # End Token
 }
 
 # Define the encoding legend for BodyGroup
