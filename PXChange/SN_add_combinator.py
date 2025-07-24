@@ -14,9 +14,16 @@ def combine_csvs_with_sn():
     # Each tuple: (filename, serial_number)
     # The serial number will be extracted from the filename.
     files_to_process = [
-        "PxChange/model_results_SN_175974.csv",
-        "PxChange/model_results_SN_185625.csv",
-        "PxChange/model_results_SN_175651.csv"
+        "PxChange/predictions_final_SN_175651.csv",
+        "PxChange/predictions_final_SN_175974.csv",
+        "PxChange/predictions_final_SN_182625.csv",
+        "PxChange/predictions_final_SN_176196.csv",
+        "PxChange/predictions_final_SN_183257.csv",
+        "PxChange/predictions_final_SN_183305.csv",
+        "PxChange/predictions_final_SN_183407.csv",
+        "PxChange/predictions_final_SN_183597.csv",
+        "PxChange/predictions_final_SN_202073.csv",
+        "PxChange/predictions_final_SN_202513.csv"
     ]
 
     all_dataframes = []
