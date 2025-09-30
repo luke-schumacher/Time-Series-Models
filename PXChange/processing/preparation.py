@@ -4,7 +4,7 @@ import os
 
 # --- 1. Setup File Paths ---
 # The script will read from the raw data file you provided.
-input_file_path = 'PXChange/data/176401/encoded_176401.csv'
+input_file_path = 'PXChange/data/176401/encoded_176401_new.csv'
 # The final, processed data will be saved to this new file.
 output_file_path = 'PXChange/data/176401/encoded_176401_condensed.csv'
 

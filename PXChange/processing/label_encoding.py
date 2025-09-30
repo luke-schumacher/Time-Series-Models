@@ -4,8 +4,8 @@ import pandas as pd
 # from sklearn.preprocessing import MinMaxScaler
 
 # --- Configuration ---
-INPUT_CSV_PATH = 'PXChange/data/176401/176401_raw.csv'
-OUTPUT_CSV_PATH = "PXChange/data/176401/encoded_176401.csv"
+INPUT_CSV_PATH = 'PXChange/data/176401/176401_raw_full.csv'
+OUTPUT_CSV_PATH = "PXChange/data/176401/encoded_176401_new.csv"
 
 # Define the encoding legend for sourceID
 SOURCEID_ENCODING_LEGEND = {
