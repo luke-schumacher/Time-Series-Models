@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Predictive Modeling for Process Time Estimation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Healthineers Corporate Teal -->
+    <!-- Application Structure Plan: The application is structured as a single-page narrative dashboard. It begins with a high-level overview (Aim & Challenge), flows into an interactive explanation of the two-model methodology, presents a dashboard of interactive charts for results analysis, and concludes with a summary and actionable next steps. This top-down, story-driven approach was chosen to guide non-technical and technical stakeholders alike through the project's logic and outcomes, allowing them to either skim the surface or dive into the interactive results, which is more engaging and informative than a static linear presentation. A sticky navigation bar facilitates easy exploration between these logical sections. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: Two-model pipeline explanation. -> Goal: Organize/Explain. -> Viz: Interactive HTML/CSS diagram. -> Interaction: Clicking a phase reveals details. -> Justification: Breaks down complex architecture into digestible, user-initiated chunks, preventing information overload. -> Method: Vanilla JS toggles.
+        - Report Info: Model performance data (True vs. Predicted, Errors). -> Goal: Relationships/Compare/Analyze. -> Viz: Interactive scatter and bar charts. -> Interaction: Hover tooltips provide specific data points. -> Justification: Dynamic charts allow for direct data exploration and a clearer understanding of model accuracy and bias compared to static images. -> Library: Chart.js (Canvas).
+        - Report Info: Key findings and next steps. -> Goal: Inform/Summarize. -> Viz: Cleanly styled text and card-based layouts. -> Interaction: None. -> Justification: Clear, scannable text is most effective for summarizing conclusions and action items. -> Method: HTML/Tailwind CSS. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+            color: #334155;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px;
+            max-height: 450px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .nav-link {
+            transition: color 0.3s, border-bottom-color 0.3s;
+        }
+        .nav-link.active {
+            color: #0d9488;
+            border-bottom-color: #0d9488;
+        }
+        .phase-card {
+            transition: all 0.3s ease-in-out;
+            cursor: pointer;
+        }
+        .phase-card.active {
+            border-color: #0d9488;
+            background-color: #f0fdfa;
+        }
+        .details-panel {
+            display: none;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-in-out;
+        }
+        .details-panel.show {
+            display: block;
+            max-height: 1000px; 
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <header id="header" class="bg-white/80 backdrop-blur-lg sticky top-0 z-50 shadow-sm">
+        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3 sm:space-x-4">
+                <div>
+                    <span class="block text-base sm:text-lg font-extrabold text-slate-800 leading-none" style="letter-spacing: 0.05em;">SIEMENS</span>
+                    <span class="block text-xs sm:text-sm font-semibold text-slate-600 leading-none tracking-tight">Healthineers</span>
+                </div>
+                <div class="border-l border-slate-300 h-8 self-center"></div>
+                <h1 class="text-lg sm:text-xl md:text-2xl font-bold text-teal-700">Process Time Prediction</h1>
+            </div>
+            <nav class="hidden md:flex space-x-8">
+                <a href="#objective" class="nav-link text-slate-600 hover:text-teal-600 border-b-2 border-transparent pb-1">Objective</a>
+                <a href="#context" class="nav-link text-slate-600 hover:text-teal-600 border-b-2 border-transparent pb-1">Context</a>
+                <a href="#methodology" class="nav-link text-slate-600 hover:text-teal-600 border-b-2 border-transparent pb-1">Methodology</a>
+                <a href="#results" class="nav-link text-slate-600 hover:text-teal-600 border-b-2 border-transparent pb-1">Results</a>
+                <a href="#next-steps" class="nav-link text-slate-600 hover:text-teal-600 border-b-2 border-transparent pb-1">Next Steps</a>
+            </nav>
+        </div>
+    </header>
+
+    <main>
+        <section id="objective" class="py-16 md:py-24 bg-white">
+            <div class="container mx-auto px-6 text-center">
+                <h2 class="text-3xl md:text-4xl font-bold tracking-tight text-slate-800">Predictive Modeling for Process Time Estimation</h2>
+                <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">A Phased, Two-Model Approach to Unlock Efficiency and Enhance Planning within our Digital Twin Ecosystem</p>
+                
+                <div class="mt-12 grid grid-cols-1 md:grid-cols-2 gap-8 text-left max-w-4xl mx-auto">
+                    <div class="bg-slate-50 p-6 rounded-lg border border-slate-200">
+                        <h3 class="text-xl font-semibold text-slate-800">What is our goal?</h3>
+                        <p class="mt-2 text-slate-600">To accurately predict the total time required to complete a complex sequence of procedural steps, enabling better resource planning and proactive bottleneck identification.</p>
+                    </div>
+                    <div class="bg-slate-50 p-6 rounded-lg border border-slate-200">
+                        <h3 class="text-xl font-semibold text-slate-800">Why is this important?</h3>
+                        <p class="mt-2 text-slate-600">This provides a data-driven foundation for process optimization, empowering stakeholders with reliable time estimates for more informed decision-making and improved overall efficiency.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="context" class="py-16 md:py-24">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-slate-800">Strategic Context: The Digital Twin World</h2>
+                    <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">This project is a key component of our broader vision to create a Digital Twin World, delivering benefits across the entire healthcare value chain.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 max-w-7xl mx-auto">
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-lg">Device Twin</h3>
+                        <p class="mt-2 text-slate-600 text-sm">Predicts product stability, failures, and provides interactive training. Optimizes workflow and patient handling.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-lg">Customer Twin</h3>
+                        <p class="mt-2 text-slate-600 text-sm">Predicts the ideal product portfolio for customers and supports fleet optimization across hospitals.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-lg">Factory Twin</h3>
+                        <p class="mt-2 text-slate-600 text-sm">Forecasts the optimal product mix and production unit requirements for the coming years.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-slate-800 text-lg">Patient Twin</h3>
+                        <p class="mt-2 text-slate-600 text-sm">Aids in optimizing examination time and improving the overall patient experience during procedures.</p>
+                    </div>
+                </div>
+                <div class="mt-12 bg-teal-50 border-l-4 border-teal-500 text-teal-800 p-6 rounded-r-lg max-w-4xl mx-auto">
+                    <h3 class="font-bold text-xl">How Our Project Fits In</h3>
+                    <p class="mt-2">The Process Time Prediction model is a foundational element of the <strong class="font-semibold">Device Twin</strong> and the <strong class="font-semibold">Customer Twin</strong>. By understanding and predicting workflow durations, we directly enhance the Device Twin's ability to optimize system performance and identify efficiencies. This, in turn, empowers the Customer Twin by providing data for fleet optimization and better hospital management, ultimately improving patient care and experience.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="methodology" class="py-16 md:py-24 bg-white">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-slate-800">Our Two-Model Pipeline Solution</h2>
+                    <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">To handle complex temporal dependencies, we developed a two-phase pipeline that breaks the problem down. Click on each phase below to learn more.</p>
+                </div>
+                
+                <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-0">
+                    <div id="phase1-card" class="phase-card w-full md:w-1/3 bg-white p-6 rounded-lg border-2 border-slate-200 shadow-sm text-center">
+                        <span class="text-sm font-semibold text-teal-600 bg-teal-100 px-3 py-1 rounded-full">Phase 1</span>
+                        <h3 class="mt-4 text-xl font-bold text-slate-800">Transformer Model</h3>
+                        <p class="mt-2 text-slate-600">Understands the "what": the context and relative importance of each step in a sequence.</p>
+                    </div>
+                    <div class="text-2xl font-bold text-teal-500 mx-4 h-16 w-16 flex items-center justify-center transform md:-rotate-90">➔</div>
+                    <div id="phase2-card" class="phase-card w-full md:w-1/3 bg-white p-6 rounded-lg border-2 border-slate-200 shadow-sm text-center">
+                        <span class="text-sm font-semibold text-blue-600 bg-blue-100 px-3 py-1 rounded-full">Phase 2</span>
+                        <h3 class="mt-4 text-xl font-bold text-slate-800">Prediction Model</h3>
+                        <p class="mt-2 text-slate-600">Predicts the "how long": the final total time for the entire sequence.</p>
+                    </div>
+                </div>
+
+                <div id="phase1-details" class="details-panel mt-8 max-w-4xl mx-auto">
+                    <div class="bg-white p-8 rounded-lg shadow-md border border-slate-200">
+                        <h3 class="text-2xl font-bold text-slate-800">Phase 1 In Detail: The Transformer Model</h3>
+                        <p class="mt-4 text-slate-600">This model learns the "grammar" of our sequences. By using a self-attention mechanism, it weighs the influence of other steps to understand the unique context of each action. Instead of predicting time directly, it predicts the <strong class="text-teal-700">proportion of total time</strong> each step will consume. This focus on relative importance simplifies its task and builds a robust understanding of process dynamics.</p>
+                    </div>
+                </div>
+                <div id="phase2-details" class="details-panel mt-8 max-w-4xl mx-auto">
+                     <div class="bg-white p-8 rounded-lg shadow-md border border-slate-200">
+                        <h3 class="text-2xl font-bold text-slate-800">Phase 2 In Detail: The Total Time Prediction Model</h3>
+                        <p class="mt-4 text-slate-600">This model translates the learned context into a final time estimate. It takes the sequence of proportions from Phase 1 and calculates aggregate statistics (like mean, sum, and standard deviation). A simple but powerful neural network then uses these features to output a single value: the predicted <strong class="text-blue-700">total time</strong> for the sequence. This decoupled approach is fast, efficient, and effective.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="results" class="py-16 md:py-24">
+            <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-slate-800">Performance & Results Dashboard</h2>
+                    <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">An initial evaluation on unseen data shows promising results, validating our approach. The following charts are fully interactive.</p>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                    <div class="bg-slate-50 p-6 rounded-lg border border-slate-200">
+                        <h3 class="text-xl font-semibold text-slate-800 text-center mb-4">True vs. Predicted Time</h3>
+                        <div class="chart-container">
+                            <canvas id="scatterChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-slate-50 p-6 rounded-lg border border-slate-200">
+                        <h3 class="text-xl font-semibold text-slate-800 text-center mb-4">Prediction Error Histogram</h3>
+                         <div class="chart-container">
+                            <canvas id="errorHistogram"></canvas>
+                        </div>
+                    </div>
+                     <div class="bg-slate-50 p-6 rounded-lg border border-slate-200">
+                        <h3 class="text-xl font-semibold text-slate-800 text-center mb-4">Value Distribution</h3>
+                         <div class="chart-container">
+                            <canvas id="distributionChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-slate-50 p-6 rounded-lg border border-slate-200">
+                        <h3 class="text-xl font-semibold text-slate-800 text-center mb-4">Residuals vs. Predicted</h3>
+                        <div class="chart-container">
+                            <canvas id="residualsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="next-steps" class="py-16 md:py-24 bg-white">
+             <div class="container mx-auto px-6">
+                <div class="text-center mb-12">
+                    <h2 class="text-3xl md:text-4xl font-bold text-slate-800">Summary & Next Steps</h2>
+                     <p class="mt-4 text-lg text-slate-600 max-w-3xl mx-auto">Our two-model pipeline has been successfully implemented with strong initial results. We propose the following steps to further refine and validate the system.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-teal-700">1. Model Iteration & Tuning</h3>
+                        <p class="mt-2 text-slate-600">Experiment with different model architectures and systematically tune hyperparameters to optimize performance.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-teal-700">2. Feature Engineering</h3>
+                        <p class="mt-2 text-slate-600">Explore adding more statistical features to the prediction model to capture more signal from the proportion sequence.</p>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-teal-700">3. Error Analysis</h3>
+                        <p class="mt-2 text-slate-600">Conduct a detailed analysis of outlier cases where the model performs poorly to gain insights for improvement.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                        <h3 class="font-bold text-teal-700">4. Alternative Model Comparison</h3>
+                        <p class="mt-2 text-slate-600">Benchmark against alternative models, such as an LSTM, to ensure our chosen approach is optimal.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm col-span-1 md:col-span-2 lg:col-span-1">
+                        <h3 class="font-bold text-teal-700">5. Deployment & Real-World Testing</h3>
+                        <p class="mt-2 text-slate-600">Develop a plan to integrate the model into a testing environment to evaluate its performance on live data.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="bg-slate-800 text-slate-400 py-8">
+        <div class="container mx-auto px-6 text-center">
+            <p>&copy; 2025 Siemens Healthineers | Project Team | R&D</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            
+            const sequenceData = [
+                {"SeqOrder":0,"true_total_time":339.0,"predicted_total_time":313.069031},
+                {"SeqOrder":1,"true_total_time":324.0,"predicted_total_time":281.27774},
+                {"SeqOrder":2,"true_total_time":310.0,"predicted_total_time":317.026489},
+                {"SeqOrder":3,"true_total_time":300.0,"predicted_total_time":304.793701},
+                {"SeqOrder":4,"true_total_time":303.0,"predicted_total_time":299.799896},
+                {"SeqOrder":5,"true_total_time":305.0,"predicted_total_time":279.79245},
+                {"SeqOrder":6,"true_total_time":283.0,"predicted_total_time":279.13681},
+                {"SeqOrder":7,"true_total_time":283.0,"predicted_total_time":294.02652},
+                {"SeqOrder":8,"true_total_time":282.0,"predicted_total_time":294.1203},
+                {"SeqOrder":9,"true_total_time":274.0,"predicted_total_time":283.376831},
+                {"SeqOrder":10,"true_total_time":273.0,"predicted_total_time":280.093414},
+                {"SeqOrder":12,"true_total_time":271.0,"predicted_total_time":271.848877},
+                {"SeqOrder":13,"true_total_time":271.0,"predicted_total_time":270.928833},
+                {"SeqOrder":14,"true_total_time":268.0,"predicted_total_time":281.829163},
+                {"SeqOrder":16,"true_total_time":268.0,"predicted_total_time":270.089478},
+                {"SeqOrder":17,"true_total_time":268.0,"predicted_total_time":272.716187},
+                {"SeqOrder":18,"true_total_time":266.0,"predicted_total_time":264.44043},
+                {"SeqOrder":19,"true_total_time":264.0,"predicted_total_time":264.914978},
+                {"SeqOrder":21,"true_total_time":262.0,"predicted_total_time":267.436737},
+                {"SeqOrder":23,"true_total_time":261.0,"predicted_total_time":259.04361},
+                {"SeqOrder":24,"true_total_time":260.0,"predicted_total_time":263.371338},
+                {"SeqOrder":26,"true_total_time":258.0,"predicted_total_time":261.644318},
+                {"SeqOrder":27,"true_total_time":256.0,"predicted_total_time":253.280182},
+                {"SeqOrder":28,"true_total_time":256.0,"predicted_total_time":262.193237},
+                {"SeqOrder":30,"true_total_time":252.0,"predicted_total_time":255.459381},
+                {"SeqOrder":31,"true_total_time":250.0,"predicted_total_time":258.941925},
+                {"SeqOrder":32,"true_total_time":250.0,"predicted_total_time":254.437347},
+                {"SeqOrder":34,"true_total_time":249.0,"predicted_total_time":251.787781},
+                {"SeqOrder":36,"true_total_time":249.0,"predicted_total_time":249.882812},
+                {"SeqOrder":37,"true_total_time":248.0,"predicted_total_time":254.673279},
+                {"SeqOrder":38,"true_total_time":248.0,"predicted_total_time":254.802185},
+                {"SeqOrder":39,"true_total_time":248.0,"predicted_total_time":249.330811},
+                {"SeqOrder":40,"true_total_time":246.0,"predicted_total_time":255.485107},
+                {"SeqOrder":41,"true_total_time":246.0,"predicted_total_time":253.0784},
+                {"SeqOrder":42,"true_total_time":244.0,"predicted_total_time":251.520477},
+                {"SeqOrder":43,"true_total_time":242.0,"predicted_total_time":246.222382},
+                {"SeqOrder":44,"true_total_time":242.0,"predicted_total_time":249.208191},
+                {"SeqOrder":45,"true_total_time":242.0,"predicted_total_time":248.618011},
+                {"SeqOrder":46,"true_total_time":241.0,"predicted_total_time":244.601501},
+                {"SeqOrder":48,"true_total_time":240.0,"predicted_total_time":244.89621},
+                {"SeqOrder":49,"true_total_time":240.0,"predicted_total_time":240.665558},
+                {"SeqOrder":50,"true_total_time":239.0,"predicted_total_time":239.81604},
+                {"SeqOrder":51,"true_total_time":238.0,"predicted_total_time":243.612122},
+                {"SeqOrder":52,"true_total_time":238.0,"predicted_total_time":239.375244},
+                {"SeqOrder":53,"true_total_time":237.0,"predicted_total_time":233.914215},
+                {"SeqOrder":54,"true_total_time":236.0,"predicted_total_time":233.155548},
+                {"SeqOrder":55,"true_total_time":236.0,"predicted_total_time":235.150635},
+                {"SeqOrder":56,"true_total_time":236.0,"predicted_total_time":243.332306},
+                {"SeqOrder":57,"true_total_time":235.0,"predicted_total_time":239.366486},
+                {"SeqOrder":58,"true_total_time":235.0,"predicted_total_time":232.062012},
+                {"SeqOrder":59,"true_total_time":234.0,"predicted_total_time":235.188446},
+                {"SeqOrder":60,"true_total_time":234.0,"predicted_total_time":238.11322},
+                {"SeqOrder":61,"true_total_time":234.0,"predicted_total_time":236.471924},
+                {"SeqOrder":63,"true_total_time":234.0,"predicted_total_time":236.568329}
+            ];
+            
+            const scatterData = sequenceData.map(d => ({ x: d.true_total_time, y: d.predicted_total_time }));
+            const errors = sequenceData.map(d => d.predicted_total_time - d.true_total_time);
+            const residualsData = sequenceData.map(d => ({ x: d.predicted_total_time, y: d.predicted_total_time - d.true_total_time}));
+
+            const createScatterChart = () => {
+                const ctx = document.getElementById('scatterChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'True vs. Predicted',
+                            data: scatterData,
+                            backgroundColor: 'rgba(13, 148, 136, 0.6)',
+                            borderColor: 'rgba(13, 148, 136, 1)',
+                            borderWidth: 1,
+                            pointRadius: 5,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                position: 'bottom',
+                                title: { display: true, text: 'True Total Time (s)' }
+                            },
+                            y: {
+                                title: { display: true, text: 'Predicted Total Time (s)' }
+                            }
+                        },
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `(True: ${context.parsed.x.toFixed(2)}, Predicted: ${context.parsed.y.toFixed(2)})`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+
+            const createErrorHistogram = () => {
+                const ctx = document.getElementById('errorHistogram').getContext('2d');
+                const bins = {};
+                const binSize = 10;
+                errors.forEach(error => {
+                    const bin = Math.floor(error / binSize) * binSize;
+                    bins[bin] = (bins[bin] || 0) + 1;
+                });
+
+                const sortedBins = Object.keys(bins).map(Number).sort((a, b) => a - b);
+                const labels = sortedBins.map(bin => `${bin} to ${bin + binSize}`);
+                const data = sortedBins.map(bin => bins[bin]);
+
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Frequency of Prediction Error',
+                            data: data,
+                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'Prediction Error (s)' } },
+                            y: { title: { display: true, text: 'Frequency' }, beginAtZero: true }
+                        }
+                    }
+                });
+            };
+
+            const createDistributionChart = () => {
+                const ctx = document.getElementById('distributionChart').getContext('2d');
+                
+                const getDistribution = (arr, binSize) => {
+                    const bins = {};
+                    arr.forEach(val => {
+                        const bin = Math.floor(val / binSize) * binSize;
+                        bins[bin] = (bins[bin] || 0) + 1;
+                    });
+                    const sortedBins = Object.keys(bins).map(Number).sort((a,b) => a - b);
+                    return {
+                        labels: sortedBins.map(b => b + binSize / 2),
+                        data: sortedBins.map(b => bins[b])
+                    };
+                };
+
+                const binSize = 10;
+                const trueTimes = sequenceData.map(d => d.true_total_time);
+                const predTimes = sequenceData.map(d => d.predicted_total_time);
+
+                const trueDist = getDistribution(trueTimes, binSize);
+                const predDist = getDistribution(predTimes, binSize);
+                
+                const allLabels = [...new Set([...trueDist.labels, ...predDist.labels])].sort((a,b)=>a-b);
+                const trueData = allLabels.map(label => {
+                    const index = trueDist.labels.indexOf(label);
+                    return index > -1 ? trueDist.data[index] : 0;
+                });
+                const predData = allLabels.map(label => {
+                    const index = predDist.labels.indexOf(label);
+                    return index > -1 ? predDist.data[index] : 0;
+                });
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: allLabels,
+                        datasets: [
+                            {
+                                label: 'True Values',
+                                data: trueData,
+                                borderColor: 'rgba(13, 148, 136, 1)',
+                                backgroundColor: 'rgba(13, 148, 136, 0.2)',
+                                fill: true,
+                                tension: 0.2
+                            },
+                            {
+                                label: 'Predicted Values',
+                                data: predData,
+                                borderColor: 'rgba(59, 130, 246, 1)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                fill: true,
+                                tension: 0.2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { title: { display: true, text: 'Total Time (s)' } },
+                            y: { title: { display: true, text: 'Frequency' }, beginAtZero: true }
+                        }
+                    }
+                });
+            };
+            
+             const createResidualsChart = () => {
+                const ctx = document.getElementById('residualsChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Residuals',
+                            data: residualsData,
+                            backgroundColor: 'rgba(239, 68, 68, 0.6)',
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            borderWidth: 1,
+                            pointRadius: 5,
+                            pointHoverRadius: 7
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: {
+                                type: 'linear',
+                                position: 'bottom',
+                                title: { display: true, text: 'Predicted Value (s)' }
+                            },
+                            y: {
+                                title: { display: true, text: 'Residual (Error)' }
+                            }
+                        },
+                         plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `(Predicted: ${context.parsed.x.toFixed(2)}, Error: ${context.parsed.y.toFixed(2)})`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            };
+
+            createScatterChart();
+            createErrorHistogram();
+            createDistributionChart();
+            createResidualsChart();
+
+            const phase1Card = document.getElementById('phase1-card');
+            const phase2Card = document.getElementById('phase2-card');
+            const phase1Details = document.getElementById('phase1-details');
+            const phase2Details = document.getElementById('phase2-details');
+
+            phase1Card.addEventListener('click', () => {
+                phase1Card.classList.toggle('active');
+                phase2Card.classList.remove('active');
+                phase1Details.classList.toggle('show');
+                phase2Details.classList.remove('show');
+            });
+            phase2Card.addEventListener('click', () => {
+                phase2Card.classList.toggle('active');
+                phase1Card.classList.remove('active');
+                phase2Details.classList.toggle('show');
+                phase1Details.classList.remove('show');
+            });
+
+            const sections = document.querySelectorAll('section');
+            const navLinks = document.querySelectorAll('.nav-link');
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        navLinks.forEach(link => {
+                            link.classList.toggle('active', link.getAttribute('href').substring(1) === entry.target.id);
+                        });
+                    }
+                });
+            }, { rootMargin: '-50% 0px -50% 0px' });
+
+            sections.forEach(section => {
+                observer.observe(section);
+            });
+        });
+    </script>
+</body>
+</html>
+
