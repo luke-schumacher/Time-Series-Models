@@ -1,12 +1,6 @@
 import os
 import sys
-
-# Direct loading of preprocess_data.py as a workaround for ModuleNotFoundError
-preprocess_data_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'processing', 'preprocess_data.py')
-preprocess_namespace = {}
-with open(preprocess_data_path, 'r', encoding='utf-8') as f:
-    exec(f.read(), preprocess_namespace)
-preprocess_176401_data = preprocess_namespace['preprocess_176401_data']
+import glob
 
 import numpy as np
 import pandas as pd
@@ -23,40 +17,34 @@ FEATURE_COLUMNS = [
     'sourceID', 'PTAB', 'BodyGroup_from', 'BodyGroup_to',
     'Position_encoded', 'Direction_encoded'
 ]
+BASE_DATA_DIR = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/data'
+BASE_PREDICTIONS_DIR = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange' # Where proportion predictions are stored
 
 # --- 2. Data Loading and Preprocessing ---
 
-def load_and_prepare_sequences(df, min_timediff, max_timediff):
+def load_and_prepare_sequences(df):
     """
     Prepares sequences from the preprocessed DataFrame, calculating step durations
     and proportions. This function assumes the input DataFrame `df` is already
-    encoded and has 'timediff' and 'SeqOrder' columns.
+    encoded and has 'timediff', 'SeqOrder', and 'true_total_time' columns.
     """
-    # Robustly create the 'Step' column in case it doesn't exist.
-    df['Step'] = df.groupby('SeqOrder').cumcount()
+    # Ensure 'Step' column exists. It should be created during preprocessing.
+    if 'Step' not in df.columns:
+        df['Step'] = df.groupby('SeqOrder').cumcount()
     
-    # Rule 1: Create a new 'step_duration' column. This is the true time difference for each step.
-    # It's calculated by taking the difference from the previous cumulative 'timediff'.
-    df['step_duration'] = df.groupby('SeqOrder')['timediff'].diff().fillna(df['timediff'])
-    # Ensure no negative durations, which can happen if a timer resets.
-    df['step_duration'] = df['step_duration'].clip(lower=0)
+    # Ensure 'step_duration' and 'true_proportion' are calculated if not already present
+    if 'step_duration' not in df.columns:
+        df['step_duration'] = df.groupby('SeqOrder')['timediff'].diff().fillna(df['timediff'])
+        df['step_duration'] = df['step_duration'].clip(lower=0)
+        end_marker_step = df[df['sourceID'] == 10].groupby('SeqOrder')['Step'].first()
+        df['end_marker_step'] = df['SeqOrder'].map(end_marker_step)
+        df.loc[df['Step'] > df['end_marker_step'], 'step_duration'] = 0
     
-    # Rule 2: The business logic states the FIRST step with sourceID == 10 is the true end marker.
-    # Find the step number of this marker for each sequence.
-    # Note: sourceID 10 is 'MRI_MSR_100' based on the legend in preprocess_data.py
-    end_marker_step = df[df['sourceID'] == 10].groupby('SeqOrder')['Step'].first()
-    df['end_marker_step'] = df['SeqOrder'].map(end_marker_step)
+    if 'true_total_time' not in df.columns:
+        df['true_total_time'] = df.groupby('SeqOrder')['step_duration'].transform('sum')
 
-    # Any step AFTER the end marker is considered post-sequence and should have a duration of 0.
-    df.loc[df['Step'] > df['end_marker_step'], 'step_duration'] = 0
-
-    # Rule 3: The total time for the sequence (the denominator for proportions) is the SUM
-    # of all the now-corrected step durations. This ensures the proportions sum to 1.
-    df['true_total_time'] = df.groupby('SeqOrder')['step_duration'].transform('sum')
-
-    # Rule 4: Calculate the final, correct proportion using the correct step duration and total time.
-    # This ensures the target proportions for each sequence are valid and based on the rules.
-    df['true_proportion'] = df['step_duration'] / (df['true_total_time'] + 1e-9)
+    if 'true_proportion' not in df.columns:
+        df['true_proportion'] = df['step_duration'] / (df['true_total_time'] + 1e-9)
 
     # Group data by sequence for the model
     grouped = df.groupby('SeqOrder')
@@ -72,7 +60,7 @@ def load_and_prepare_sequences(df, min_timediff, max_timediff):
         sequences.append(seq_features)
         proportions.append(seq_proportions)
 
-    return sequences, proportions, df, min_timediff, max_timediff
+    return sequences, proportions, df
 
 # --- 3. Transformer Model Architecture ---
 
@@ -221,137 +209,121 @@ def create_advanced_visualizations(results_df, output_dir='visualizations', titl
 def main():
     """Main function to run the data processing, training, and prediction."""
     
-    # Define paths for raw input and preprocessed output
-    raw_data_file = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/data/176401/176401_raw_full.csv'
-    preprocessed_data_file = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/data/176401/preprocessed_176401.csv'
-    output_proportions_file = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/prediction_176401_proportions_refactored.csv'
-    output_total_time_file = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/prediction_176401_total_time_refactored.csv'
+    # Get list of dataset IDs from the data directory
+    dataset_ids = [d for d in os.listdir(BASE_DATA_DIR) if os.path.isdir(os.path.join(BASE_DATA_DIR, d))]
 
-    # --- Step 1: Preprocess raw data using the unified script ---
-    print("--- Starting unified data preprocessing ---")
-    processed_df, min_timediff, max_timediff = preprocess_176401_data(raw_data_file, preprocessed_data_file)
-    if processed_df is None:
-        print("Data preprocessing failed. Exiting.")
-        return
-    print(f"Min timediff: {min_timediff}, Max timediff: {max_timediff}")
+    for dataset_id in dataset_ids:
+        print(f"\n--- Processing dataset: {dataset_id} with Transformer Model ---")
+        
+        preprocessed_data_file = os.path.join(BASE_DATA_DIR, dataset_id, f'preprocessed_{dataset_id}.csv')
+        output_proportions_file = os.path.join(BASE_PREDICTIONS_DIR, f'prediction_{dataset_id}_proportions_refactored.csv')
+        
+        if not os.path.exists(preprocessed_data_file):
+            print(f"❌ Error: Preprocessed data file not found at '{preprocessed_data_file}'. Skipping dataset {dataset_id}.")
+            continue
 
-    # --- Step 2: Prepare sequences for the Transformer model ---
-    sequences, proportions, processed_df, _, _ = load_and_prepare_sequences(processed_df, min_timediff, max_timediff)
-    if sequences is None:
-        return
+        # --- Step 1: Load preprocessed data ---
+        processed_df = pd.read_csv(preprocessed_data_file)
+        
+        # --- Step 2: Prepare sequences for the Transformer model ---
+        # min_timediff and max_timediff are no longer needed here as true_total_time is already calculated
+        sequences, proportions, processed_df = load_and_prepare_sequences(processed_df)
+        if sequences is None:
+            print(f"Skipping dataset {dataset_id} due to sequence preparation errors.")
+            continue
 
-    # --- Prepare data for training and prediction ---
-    sequence_indices = np.arange(len(sequences))
-    train_indices, val_indices = train_test_split(sequence_indices, test_size=0.2, random_state=42)
+        # --- Prepare data for training and prediction ---
+        sequence_indices = np.arange(len(sequences))
+        train_indices, val_indices = train_test_split(sequence_indices, test_size=0.2, random_state=42)
 
-    X_train_unpadded = [sequences[i] for i in train_indices]
-    y_prop_train_unpadded = [proportions[i] for i in train_indices]
-    
-    X_val_unpadded = [sequences[i] for i in val_indices]
-    y_prop_val_unpadded = [proportions[i] for i in val_indices]
+        X_train_unpadded = [sequences[i] for i in train_indices]
+        y_prop_train_unpadded = [proportions[i] for i in train_indices]
+        
+        X_val_unpadded = [sequences[i] for i in val_indices]
+        y_prop_val_unpadded = [proportions[i] for i in val_indices]
 
-    X_train = tf.keras.preprocessing.sequence.pad_sequences(X_train_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
-    y_prop_train = tf.keras.preprocessing.sequence.pad_sequences(y_prop_train_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
-    X_val = tf.keras.preprocessing.sequence.pad_sequences(X_val_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
-    y_prop_val = tf.keras.preprocessing.sequence.pad_sequences(y_prop_val_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
-    
-    X_all_padded = tf.keras.preprocessing.sequence.pad_sequences(sequences, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
-    
-    print(f"\nData shapes (Train): X={X_train.shape}, y_proportions={y_prop_train.shape}")
-    print(f"Data shapes (Val):   X={X_val.shape}, y_proportions={y_prop_val.shape}")
+        X_train = tf.keras.preprocessing.sequence.pad_sequences(X_train_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
+        y_prop_train = tf.keras.preprocessing.sequence.pad_sequences(y_prop_train_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
+        X_val = tf.keras.preprocessing.sequence.pad_sequences(X_val_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
+        y_prop_val = tf.keras.preprocessing.sequence.pad_sequences(y_prop_val_unpadded, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
+        
+        X_all_padded = tf.keras.preprocessing.sequence.pad_sequences(sequences, maxlen=MAX_SEQ_LEN, padding='post', dtype='float32')
+        
+        print(f"\nData shapes (Train): X={X_train.shape}, y_proportions={y_prop_train.shape}")
+        print(f"Data shapes (Val):   X={X_val.shape}, y_proportions={y_prop_val.shape}")
 
-    input_shape = X_train.shape[1:]
-    model = build_transformer_model(input_shape)
-    
-    model.compile(
-        optimizer="adam", 
-        loss=tf.keras.losses.KLDivergence()
-    )
-    model.summary()
-    
-    print("\n--- Starting Model Training ---")
-    model.fit(
-        X_train, 
-        y_prop_train,
-        validation_data=(X_val, y_prop_val),
-        epochs=50,
-        batch_size=32,
-        callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
-    )
-    print("--- Model Training Finished ---\n")
+        input_shape = X_train.shape[1:]
+        model = build_transformer_model(input_shape)
+        
+        model.compile(
+            optimizer="adam", 
+            loss=tf.keras.losses.KLDivergence()
+        )
+        model.summary()
+        
+        print("\n--- Starting Model Training ---")
+        model.fit(
+            X_train, 
+            y_prop_train,
+            validation_data=(X_val, y_prop_val),
+            epochs=50,
+            batch_size=32,
+            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
+        )
+        print("--- Model Training Finished ---\\n")
 
-    # --- Generate Predictions and Create Final Output ---
-    print("--- Generating predictions for the entire dataset ---")
-    pred_proportions_padded = model.predict(X_all_padded)
-    
-    # Add the predicted proportions back to the original dataframe for easy output generation
-    processed_df['predicted_proportion'] = 0.0
-    
-    unique_seq_orders = processed_df['SeqOrder'].unique()
-    
-    for i, seq_order_val in enumerate(unique_seq_orders):
-        seq_indices = processed_df[processed_df['SeqOrder'] == seq_order_val].index
-        actual_len = len(seq_indices)
-        pred_props = pred_proportions_padded[i, :actual_len, 0]
-        processed_df.loc[seq_indices, 'predicted_proportion'] = pred_props
-            
-    # Calculate predicted step duration and total time
-    # Denormalize proportions to get step durations
-    # Note: This assumes that the proportions were based on a normalized timediff range.
-    # If true_proportion = step_duration / true_total_time, then step_duration = true_total_time * true_proportion
-    # We need to predict total time first, or predict step duration directly.
-    # For now, let's assume we want to predict total time based on these proportions.
-    # The original notebook passes these proportions to another model to predict total time.
-    # For this refactored notebook, we will calculate a 'predicted_total_time' by summing the predicted step durations.
-    # To get predicted step durations, we need a predicted total time for each sequence.
-    # Since this model only predicts proportions, we'll have to make an assumption or use a simple method.
-    # A simple approach is to assume the sum of predicted proportions should scale to the average total time, or use a fixed max_timediff.
-    # Let's use the max_timediff as a scaling factor for now, as a placeholder for a more sophisticated total time prediction.
-    # This is a simplification, as the true total time is not directly predicted by this model.
-    # The ensemble model in LSTM_TF.ipynb is designed to predict total time.
-    # For this notebook, we will calculate a 'predicted_total_time' by summing the predicted step durations.
-    # To get predicted step durations, we need to scale the predicted proportions.
-    # Let's use the true total time for scaling for now, to evaluate how well the proportions are predicted.
-    # This is for evaluation purposes within this notebook, not for a final prediction of total time.
-    # The actual prediction of total time will be handled by the ensemble model.
-    
-    # For evaluation within this notebook, let's calculate a 'reconstructed_step_duration' and 'reconstructed_total_time'
-    # using the true total time for scaling, to see how well the proportions align.
-    processed_df['reconstructed_step_duration'] = processed_df['predicted_proportion'] * processed_df['true_total_time']
-    processed_df['reconstructed_total_time'] = processed_df.groupby('SeqOrder')['reconstructed_step_duration'].transform('sum')
+        # --- Generate Predictions and Create Final Output ---
+        print("--- Generating predictions for the entire dataset ---")
+        pred_proportions_padded = model.predict(X_all_padded)
+        
+        # Add the predicted proportions back to the original dataframe for easy output generation
+        processed_df['predicted_proportion'] = 0.0
+        
+        unique_seq_orders = processed_df['SeqOrder'].unique()
+        
+        for i, seq_order_val in enumerate(unique_seq_orders):
+            seq_indices = processed_df[processed_df['SeqOrder'] == seq_order_val].index
+            actual_len = len(seq_indices)
+            pred_props = pred_proportions_padded[i, :actual_len, 0]
+            processed_df.loc[seq_indices, 'predicted_proportion'] = pred_props
+                
+        # For evaluation within this notebook, let's calculate a 'reconstructed_step_duration' and 'reconstructed_total_time'
+        # using the true total time for scaling, to see how well the proportions align.
+        processed_df['reconstructed_step_duration'] = processed_df['predicted_proportion'] * processed_df['true_total_time']
+        processed_df['reconstructed_total_time'] = processed_df.groupby('SeqOrder')['reconstructed_step_duration'].transform('sum')
 
-    # Select and order columns for the final output file for clarity and verification
-    output_columns = [
-        'SeqOrder',
-        'Step',
-        'sourceID',
-        'timediff', # Original cumulative timediff for verification
-        'step_duration', # The calculated individual step duration
-        'true_proportion',
-        'predicted_proportion',
-        'true_total_time',
-        'reconstructed_total_time'
-    ]
-    
-    final_df = processed_df[output_columns]
+        # Select and order columns for the final output file for clarity and verification
+        output_columns = [
+            'SeqOrder',
+            'Step',
+            'sourceID',
+            'timediff', # Original cumulative timediff for verification
+            'step_duration', # The calculated individual step duration
+            'true_proportion',
+            'predicted_proportion',
+            'true_total_time',
+            'reconstructed_total_time'
+        ]
+        
+        final_df = processed_df[output_columns]
 
-    final_df.to_csv(output_proportions_file, index=False)
-    print(f"✅ Predictions for all sequences saved to '{output_proportions_file}'")
+        final_df.to_csv(output_proportions_file, index=False)
+        print(f"✅ Predictions for all sequences of dataset {dataset_id} saved to '{output_proportions_file}'")
 
-    print("\n--- Sample of Predictions ---")
-    print(final_df.head(20))
+        print("\n--- Sample of Predictions ---")
+        print(final_df.head(20))
 
-    print("\n--- Verifying Predicted Proportions Sum to 1 (for first 5 sequences) ---")
-    print(final_df.groupby('SeqOrder')['predicted_proportion'].sum().head())
-    
-    print("\n--- Verifying True Proportions Sum to 1 (for first 5 sequences) ---")
-    print(final_df.groupby('SeqOrder')['true_proportion'].sum().head())
+        print("\n--- Verifying Predicted Proportions Sum to 1 (for first 5 sequences) ---")
+        print(final_df.groupby('SeqOrder')['predicted_proportion'].sum().head())
+        
+        print("\n--- Verifying True Proportions Sum to 1 (for first 5 sequences) ---")
+        print(final_df.groupby('SeqOrder')['true_proportion'].sum().head())
 
-    # --- Visualizations for reconstructed total time ---
-    results_df_for_viz = final_df[['SeqOrder', 'true_total_time', 'reconstructed_total_time']].drop_duplicates(subset=['SeqOrder']).copy()
-    results_df_for_viz.rename(columns={'reconstructed_total_time': 'predicted_total_time'}, inplace=True)
-    create_visualizations(results_df_for_viz, title_prefix="Transformer Proportions ")
-    create_advanced_visualizations(results_df_for_viz, title_prefix="Transformer Proportions ")
+        # --- Visualizations for reconstructed total time ---
+        results_df_for_viz = final_df[['SeqOrder', 'true_total_time', 'reconstructed_total_time']].drop_duplicates(subset=['SeqOrder']).copy()
+        results_df_for_viz.rename(columns={'reconstructed_total_time': 'predicted_total_time'}, inplace=True)
+        create_visualizations(results_df_for_viz, output_dir=os.path.join('visualizations', dataset_id), title_prefix=f"Transformer Proportions {dataset_id} ")
+        create_advanced_visualizations(results_df_for_viz, output_dir=os.path.join('visualizations', dataset_id), title_prefix=f"Transformer Proportions {dataset_id} ")
 
 if __name__ == "__main__":
     main()
