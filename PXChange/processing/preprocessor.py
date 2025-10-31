@@ -16,15 +16,24 @@ def preprocess_data(dataset_id, base_data_dir='C:/Users/lukis/Documents/GitHub/T
     """
     input_dir = os.path.join(base_data_dir, dataset_id)
     
-    # Find any CSV file that is not a derivative file
-    potential_files = glob.glob(os.path.join(input_dir, '*.csv'))
-    raw_files = [f for f in potential_files if not any(name in os.path.basename(f) for name in ['encoded', 'filtered', 'predictions', 'preprocessed'])]
+    # Find all CSV files in the directory
+    all_csv_files = glob.glob(os.path.join(input_dir, '*.csv'))
+    
+    # Exclude files that are clearly processed/derived
+    raw_candidates = []
+    for f in all_csv_files:
+        basename = os.path.basename(f).lower()
+        if not any(name in basename for name in ['encoded', 'filtered', 'predictions', 'preprocessed']):
+            raw_candidates.append(f)
 
-    if not raw_files:
+    input_raw_csv_path = None
+    if raw_candidates:
+        # Take the largest non-derived file as the raw data
+        input_raw_csv_path = max(raw_candidates, key=os.path.getsize)
+
+    if not input_raw_csv_path:
         print(f"❌ Error: No suitable raw data file found for dataset {dataset_id} in {input_dir}")
         return None, None, None
-    
-    input_raw_csv_path = raw_files[0] # Take the first suitable file found
     
     output_encoded_csv_path = os.path.join(input_dir, f'preprocessed_{dataset_id}.csv')
 
@@ -34,7 +43,9 @@ def preprocess_data(dataset_id, base_data_dir='C:/Users/lukis/Documents/GitHub/T
         'MRI_FRR_264': 5, 'MRI_FRR_2': 6, 'MRI_FRR_3': 7, 'MRI_FRR_34': 8, 'MRI_MPT_1005': 9,
         'MRI_MSR_100': 10, 'MRI_MSR_104': 11, 'MRI_MSR_21': 12,
         'START': 13,  # Start token
-        'END': 14   # End Token
+        'END': 14,   # End Token
+        'MRI_MSR_34': 15,
+        'MRI_FRR_256': 16
     }
 
     BODYGROUP_ENCODING_LEGEND = {
@@ -89,17 +100,44 @@ def preprocess_data(dataset_id, base_data_dir='C:/Users/lukis/Documents/GitHub/T
     else:
         df['Direction_encoded'] = 0
 
-    # --- 5. Find Min/Max for 'timediff' ---
+    # --- 5. Calculate true_total_time and filter ---
     min_timediff, max_timediff = None, None
+    
+    # Check for 'timediff' or 'Predicted_timediff'
+    timediff_col = None
     if 'timediff' in df.columns:
+        timediff_col = 'timediff'
+    elif 'Predicted_timediff' in df.columns:
+        timediff_col = 'Predicted_timediff'
+        df.rename(columns={'Predicted_timediff': 'timediff'}, inplace=True) # Rename for consistency
+    
+    if timediff_col:
+        df['Step'] = df.groupby('SeqOrder').cumcount()
+        df['step_duration'] = df.groupby('SeqOrder')['timediff'].diff().fillna(df['timediff'])
+        df['step_duration'] = df['step_duration'].clip(lower=0)
+        
+        end_marker_step = df[df['sourceID'] == 10].groupby('SeqOrder')['Step'].first()
+        df['end_marker_step'] = df['SeqOrder'].map(end_marker_step)
+        df.loc[df['Step'] > df['end_marker_step'], 'step_duration'] = 0
+        
+        df['true_total_time'] = df.groupby('SeqOrder')['step_duration'].transform('sum')
+
+        # Filter out sequences where true_total_time > 1800 seconds
+        initial_sequences = df['SeqOrder'].nunique()
+        df = df[df['true_total_time'] <= 1800]
+        filtered_sequences = df['SeqOrder'].nunique()
+        print(f"Filtered out {initial_sequences - filtered_sequences} sequences longer than 1800 seconds.")
+
         min_timediff = df['timediff'].min()
         max_timediff = df['timediff'].max()
+    else:
+        print("Warning: Neither 'timediff' nor 'Predicted_timediff' column found in the loaded DataFrame. Skipping true_total_time calculation and filtering.")
 
     # --- 6. Filter and Reorder Columns ---
     final_columns_to_keep = [
         'SeqOrder', 'sourceID', 'timediff', 'PTAB', 'BodyGroup_from', 'BodyGroup_to',
         'PatientID_from', 'PatientID_to', 'Age', 'Weight', 'Height',
-        'Position_encoded', 'Direction_encoded'
+        'Position_encoded', 'Direction_encoded', 'true_total_time' # Add true_total_time
     ]
     
     existing_columns_to_keep = [col for col in final_columns_to_keep if col in df.columns]

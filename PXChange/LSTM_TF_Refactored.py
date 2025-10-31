@@ -1,12 +1,6 @@
 import os
 import sys
-
-# Direct loading of preprocess_data.py as a workaround for ModuleNotFoundError
-preprocess_data_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'processing', 'preprocess_data.py')
-preprocess_namespace = {}
-with open(preprocess_data_path, 'r', encoding='utf-8') as f:
-    exec(f.read(), preprocess_namespace)
-preprocess_176401_data = preprocess_namespace['preprocess_176401_data']
+import glob
 
 import numpy as np
 import pandas as pd
@@ -20,50 +14,41 @@ import seaborn as sns
 # --- 1. Constants and Configuration ---
 
 MAX_SEQ_LEN = 128
+BASE_DATA_DIR = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/data'
+BASE_PREDICTIONS_DIR = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange' # Where proportion predictions are stored
 
 # --- 2. Data Loading and Preprocessing ---
 
-def load_and_preprocess_for_ensemble(proportions_file, raw_data_file):
+def load_and_prepare_ensemble_data(dataset_id):
     """
-    Loads predicted proportions, extracts statistical features, and aligns them with
-    the true total time for each sequence. This version uses the preprocessed raw data.
+    Loads predicted proportions and the preprocessed raw data for a given dataset,
+    aligning them for ensemble model training.
     """
+    proportions_file = os.path.join(BASE_PREDICTIONS_DIR, f'prediction_{dataset_id}_proportions_refactored.csv')
+    preprocessed_data_file = os.path.join(BASE_DATA_DIR, dataset_id, f'preprocessed_{dataset_id}.csv')
+
     if not os.path.exists(proportions_file):
-        print(f"❌ Error: Proportions file not found at '{proportions_file}'")
+        print(f"❌ Error: Proportions file not found at '{proportions_file}' for dataset {dataset_id}")
         return None, None, None, None, None
-    if not os.path.exists(raw_data_file):
-        print(f"❌ Error: Raw data file not found at '{raw_data_file}'")
+    if not os.path.exists(preprocessed_data_file):
+        print(f"❌ Error: Preprocessed data file not found at '{preprocessed_data_file}' for dataset {dataset_id}")
         return None, None, None, None, None
 
     props_df = pd.read_csv(proportions_file)
+    processed_raw_df = pd.read_csv(preprocessed_data_file)
     
-    # Use the preprocess_176401_data function to get the processed raw data and min/max timediff
-    # We only need the processed_df and min/max for true total time calculation
-    # The output_encoded_csv_path is just a dummy here as we don't need to save it again
-    temp_output_path = './temp_preprocessed_raw.csv' # Temporary file for preprocess_data
-    processed_raw_df, min_timediff, max_timediff = preprocess_176401_data(raw_data_file, temp_output_path)
-    if os.path.exists(temp_output_path):
-        os.remove(temp_output_path)
-    
-    if processed_raw_df is None:
-        print("Error during raw data preprocessing.")
+    # Ensure 'true_total_time' is available from the preprocessed data
+    if 'true_total_time' not in processed_raw_df.columns:
+        print(f"❌ Error: 'true_total_time' column not found in {preprocessed_data_file}")
         return None, None, None, None, None
 
-    # Re-calculate the true total time using the definitive logic from processed_raw_df
-    processed_raw_df['Step'] = processed_raw_df.groupby('SeqOrder').cumcount()
-    processed_raw_df['step_duration'] = processed_raw_df.groupby('SeqOrder')['timediff'].diff().fillna(processed_raw_df['timediff'])
-    processed_raw_df['step_duration'] = processed_raw_df['step_duration'].clip(lower=0)
-    
-    end_marker_step = processed_raw_df[processed_raw_df['sourceID'] == 10].groupby('SeqOrder')['Step'].first()
-    processed_raw_df['end_marker_step'] = processed_raw_df['SeqOrder'].map(end_marker_step)
-    processed_raw_df.loc[processed_raw_df['Step'] > processed_raw_df['end_marker_step'], 'step_duration'] = 0
-    
-    total_times = processed_raw_df.groupby('SeqOrder')['step_duration'].sum()
+    # Extract true total times from the preprocessed raw data
+    total_times = processed_raw_df.groupby('SeqOrder')['true_total_time'].first() # 'first' because it's constant per SeqOrder
 
     # --- Prepare data for the Models ---
     X_sequences, X_num_steps, X_stats = [], [], []
     
-    for _, g in props_df.groupby('SeqOrder'):
+    for seq_order, g in props_df.groupby('SeqOrder'):
         proportions = g['predicted_proportion'].values
         X_sequences.append(proportions.reshape(-1, 1))
         X_num_steps.append(len(g))
@@ -85,7 +70,7 @@ def load_and_preprocess_for_ensemble(proportions_file, raw_data_file):
     X_steps_arr = np.array(X_num_steps, dtype='float32').reshape(-1, 1)
     X_stats_arr = np.array(X_stats, dtype='float32')
 
-    print(f"Successfully processed {len(X_padded_seq)} sequences.")
+    print(f"Successfully prepared ensemble data for dataset {dataset_id} with {len(X_padded_seq)} sequences.")
     
     return X_padded_seq, X_steps_arr, X_stats_arr, y_sequences.reshape(-1, 1), props_df
 
@@ -170,108 +155,113 @@ def create_advanced_visualizations(results_df, output_dir='visualizations', titl
 # --- 5. Training and Prediction Orchestration ---
 
 def main():
-    """Main function to run the data processing, training, and prediction."""
+    """Main function to run the data processing, training, and prediction for all datasets."""
     
-    # Define paths for input and output files
-    proportions_file = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/prediction_176401_proportions_refactored.csv'
-    raw_data_file = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/data/176401/176401_raw_full.csv'
-    output_predictions_file = 'C:/Users/lukis/Documents/GitHub/Time-Series-Models/PXChange/prediction_176401_total_time_refactored.csv'
+    # Get list of dataset IDs from the data directory
+    dataset_ids = [d for d in os.listdir(BASE_DATA_DIR) if os.path.isdir(os.path.join(BASE_DATA_DIR, d))]
     
-    X_seq, X_steps, X_stats, y, props_df = load_and_preprocess_for_ensemble(proportions_file, raw_data_file)
-    if X_seq is None: return
-
-    X_seq_train, X_seq_val, X_steps_train, X_steps_val, X_stats_train, X_stats_val, y_train, y_val = train_test_split(
-        X_seq, X_steps, X_stats, y, test_size=0.2, random_state=42
-    )
-    
-    scaler_steps = StandardScaler(); X_steps_train_scaled, X_steps_val_scaled = scaler_steps.fit_transform(X_steps_train), scaler_steps.transform(X_steps_val)
-    scaler_stats = StandardScaler(); X_stats_train_scaled, X_stats_val_scaled = scaler_stats.fit_transform(X_stats_train), scaler_stats.transform(X_stats_val)
-    scaler_y = StandardScaler(); y_train_scaled, y_val_scaled = scaler_y.fit_transform(y_train), scaler_y.transform(y_val)
-    
-    # --- Train Statistical Model ---
-    print("\n--- Training Statistical Model ---")
-    stat_model = build_statistical_model((1,), X_stats_train.shape[1:])
-    stat_model.compile(optimizer='adam', loss='huber', metrics=['mae'])
-    stat_model.fit(
-        [X_steps_train_scaled, X_stats_train_scaled], y_train_scaled,
-        validation_data=([X_steps_val_scaled, X_stats_val_scaled], y_val_scaled),
-        epochs=300, batch_size=32,
-        callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)],
-        verbose=0
-    )
-    
-    # --- Train Sequential Model ---
-    print("\n--- Training Sequential Model ---")
-    seq_model = build_sequential_model(X_seq_train.shape[1:])
-    seq_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005), loss='huber', metrics=['mae'])
-    seq_model.fit(
-        X_seq_train, y_train_scaled,
-        validation_data=(X_seq_val, y_val_scaled),
-        epochs=500, batch_size=32,
-        callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=75, restore_best_weights=True)],
-        verbose=0
-    )
-    
-    # --- Create Training Data for Meta-Model ---
-    stat_preds_val = stat_model.predict([X_steps_val_scaled, X_stats_val_scaled])
-    seq_preds_val = seq_model.predict(X_seq_val)
-    meta_X_train = np.hstack((stat_preds_val, seq_preds_val, X_steps_val_scaled, X_stats_val_scaled))
-    meta_y_train = y_val_scaled
-    
-    # --- Train Meta-Model ---
-    print("\n--- Training Meta-Model ---")
-    meta_model = build_meta_model(meta_X_train.shape[1])
-    meta_model.compile(optimizer='adam', loss='huber', metrics=['mae'])
-    meta_model.summary()
-    meta_model.fit(
-        meta_X_train, meta_y_train,
-        epochs=200, batch_size=16,
-        callbacks=[tf.keras.callbacks.EarlyStopping(monitor='loss', patience=20, restore_best_weights=True)],
-        verbose=1
-    )
-    
-    # --- Generate Final Ensemble Predictions ---
-    print("\n--- Generating Final Ensemble Predictions ---")
-    X_steps_scaled = scaler_steps.transform(X_steps)
-    X_stats_scaled = scaler_stats.transform(X_stats)
-    stat_preds_scaled = stat_model.predict([X_steps_scaled, X_stats_scaled])
-    seq_preds_scaled = seq_model.predict(X_seq)
-    
-    meta_X_final = np.hstack((stat_preds_scaled, seq_preds_scaled, X_steps_scaled, X_stats_scaled))
-    final_preds_scaled = meta_model.predict(meta_X_final)
-    
-    predicted_times = scaler_y.inverse_transform(final_preds_scaled).flatten()
-    
-    # --- Final Output ---
-    seq_order_to_time = dict(zip(props_df['SeqOrder'].unique(), predicted_times))
-    props_df['predicted_total_time'] = np.nan
-    
-    # Ensure 'Step' column exists for indexing
-    if 'Step' not in props_df.columns:
-        props_df['Step'] = props_df.groupby('SeqOrder').cumcount()
+    for dataset_id in dataset_ids:
+        print(f"\n--- Processing dataset: {dataset_id} with LSTM Ensemble Model ---")
         
-    # Find the index of the last step for each sequence to assign the total time prediction
-    # This assumes the total time is associated with the last step of a sequence
-    last_step_indices = props_df.groupby('SeqOrder')['Step'].idxmax()
-    
-    for seq_order, idx in last_step_indices.items():
-        if seq_order in seq_order_to_time:
-            props_df.loc[idx, 'predicted_total_time'] = seq_order_to_time[seq_order]
+        output_predictions_file = os.path.join(BASE_PREDICTIONS_DIR, f'prediction_{dataset_id}_total_time_refactored.csv')
+        
+        X_seq, X_steps, X_stats, y, props_df = load_and_prepare_ensemble_data(dataset_id)
+        if X_seq is None:
+            print(f"Skipping dataset {dataset_id} due to data loading/preparation errors.")
+            continue
 
-    props_df.to_csv(output_predictions_file, index=False)
-    print(f"✅ Final predictions saved to '{output_predictions_file}'")
+        X_seq_train, X_seq_val, X_steps_train, X_steps_val, X_stats_train, X_stats_val, y_train, y_val = train_test_split(
+            X_seq, X_steps, X_stats, y, test_size=0.2, random_state=42
+        )
+        
+        scaler_steps = StandardScaler(); X_steps_train_scaled, X_steps_val_scaled = scaler_steps.fit_transform(X_steps_train), scaler_steps.transform(X_steps_val)
+        scaler_stats = StandardScaler(); X_stats_train_scaled, X_stats_val_scaled = scaler_stats.fit_transform(X_stats_train), scaler_stats.transform(X_stats_val)
+        scaler_y = StandardScaler(); y_train_scaled, y_val_scaled = scaler_y.fit_transform(y_train), scaler_y.transform(y_val)
+        
+        # --- Train Statistical Model ---
+        print(f"\n--- Training Statistical Model for {dataset_id} ---")
+        stat_model = build_statistical_model((1,), X_stats_train.shape[1:])
+        stat_model.compile(optimizer='adam', loss='huber', metrics=['mae'])
+        stat_model.fit(
+            [X_steps_train_scaled, X_stats_train_scaled], y_train_scaled,
+            validation_data=([X_steps_val_scaled, X_stats_val_scaled], y_val_scaled),
+            epochs=300, batch_size=32,
+            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30, restore_best_weights=True)],
+            verbose=0
+        )
+        
+        # --- Train Sequential Model ---
+        print(f"\n--- Training Sequential Model for {dataset_id} ---")
+        seq_model = build_sequential_model(X_seq_train.shape[1:])
+        seq_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005), loss='huber', metrics=['mae'])
+        seq_model.fit(
+            X_seq_train, y_train_scaled,
+            validation_data=(X_seq_val, y_val_scaled),
+            epochs=500, batch_size=32,
+            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=75, restore_best_weights=True)],
+            verbose=0
+        )
+        
+        # --- Create Training Data for Meta-Model ---
+        stat_preds_val = stat_model.predict([X_steps_val_scaled, X_stats_val_scaled])
+        seq_preds_val = seq_model.predict(X_seq_val)
+        meta_X_train = np.hstack((stat_preds_val, seq_preds_val, X_steps_val_scaled, X_stats_val_scaled))
+        meta_y_train = y_val_scaled
+        
+        # --- Train Meta-Model ---
+        print(f"\n--- Training Meta-Model for {dataset_id} ---")
+        meta_model = build_meta_model(meta_X_train.shape[1])
+        meta_model.compile(optimizer='adam', loss='huber', metrics=['mae'])
+        # meta_model.summary() # Optional: print summary for each model
+        meta_model.fit(
+            meta_X_train, meta_y_train,
+            epochs=200, batch_size=16,
+            callbacks=[tf.keras.callbacks.EarlyStopping(monitor='loss', patience=20, restore_best_weights=True)],
+            verbose=0 # Set to 1 for more verbose output during meta-model training
+        )
+        
+        # --- Generate Final Ensemble Predictions ---
+        print(f"\n--- Generating Final Ensemble Predictions for {dataset_id} ---")
+        X_steps_scaled = scaler_steps.transform(X_steps)
+        X_stats_scaled = scaler_stats.transform(X_stats)
+        stat_preds_scaled = stat_model.predict([X_steps_scaled, X_stats_scaled])
+        seq_preds_scaled = seq_model.predict(X_seq)
+        
+        meta_X_final = np.hstack((stat_preds_scaled, seq_preds_scaled, X_steps_scaled, X_stats_scaled))
+        final_preds_scaled = meta_model.predict(meta_X_final)
+        
+        predicted_times = scaler_y.inverse_transform(final_preds_scaled).flatten()
+        
+        # --- Final Output ---
+        seq_order_to_time = dict(zip(props_df['SeqOrder'].unique(), predicted_times))
+        props_df['predicted_total_time'] = np.nan
+        
+        # Ensure 'Step' column exists for indexing
+        if 'Step' not in props_df.columns:
+            props_df['Step'] = props_df.groupby('SeqOrder').cumcount()
+            
+        # Find the index of the last step for each sequence to assign the total time prediction
+        # This assumes the total time is associated with the last step of a sequence
+        last_step_indices = props_df.groupby('SeqOrder')['Step'].idxmax()
+        
+        for seq_order, idx in last_step_indices.items():
+            if seq_order in seq_order_to_time:
+                props_df.loc[idx, 'predicted_total_time'] = seq_order_to_time[seq_order]
 
-    results_df = pd.DataFrame({
-        'SeqOrder': props_df['SeqOrder'].unique(),
-        'true_total_time': scaler_y.inverse_transform(y).flatten(),
-        'predicted_total_time': predicted_times
-    })
-    
-    create_visualizations(results_df, title_prefix="Ensemble ")
-    create_advanced_visualizations(results_df, title_prefix="Ensemble ")
+        props_df.to_csv(output_predictions_file, index=False)
+        print(f"✅ Final predictions for {dataset_id} saved to '{output_predictions_file}'")
 
-    print("\n--- Sample of Final Predictions ---")
-    if not props_df.empty: print(props_df[props_df['SeqOrder'] == props_df['SeqOrder'].iloc[0]])
+        results_df = pd.DataFrame({
+            'SeqOrder': props_df['SeqOrder'].unique(),
+            'true_total_time': scaler_y.inverse_transform(y).flatten(),
+            'predicted_total_time': predicted_times
+        })
+        
+        create_visualizations(results_df, output_dir=os.path.join('visualizations', dataset_id), title_prefix=f"Ensemble {dataset_id} ")
+        create_advanced_visualizations(results_df, output_dir=os.path.join('visualizations', dataset_id), title_prefix=f"Ensemble {dataset_id} ")
+
+        print(f"\n--- Sample of Final Predictions for {dataset_id} ---")
+        if not props_df.empty: print(props_df[props_df['SeqOrder'] == props_df['SeqOrder'].iloc[0]])
 
 if __name__ == "__main__":
     main()
