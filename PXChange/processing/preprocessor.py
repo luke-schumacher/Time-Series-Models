@@ -43,7 +43,9 @@ def preprocess_data(dataset_id, base_data_dir='C:/Users/lukis/Documents/GitHub/T
         'MRI_FRR_264': 5, 'MRI_FRR_2': 6, 'MRI_FRR_3': 7, 'MRI_FRR_34': 8, 'MRI_MPT_1005': 9,
         'MRI_MSR_100': 10, 'MRI_MSR_104': 11, 'MRI_MSR_21': 12,
         'START': 13,  # Start token
-        'END': 14   # End Token
+        'END': 14,   # End Token
+        'MRI_MSR_34': 15,
+        'MRI_FRR_256': 16
     }
 
     BODYGROUP_ENCODING_LEGEND = {
