@@ -173,22 +173,25 @@ def generate_pipeline(args):
     print("\nStep 2: Preparing conditioning data...")
     if args.conditioning_file:
         conditioning_df = pd.read_csv(args.conditioning_file)
+        if 'dataset_id' not in conditioning_df.columns:
+            raise ValueError("Conditioning file must contain 'dataset_id' column for per-customer generation")
         print(f"[OK] Loaded conditioning from {args.conditioning_file}")
+        print(f"    Customers found: {conditioning_df['dataset_id'].nunique()}")
     else:
-        # Use validation data as conditioning examples
+        # Use preprocessed data - get one representative row per customer
         df = load_preprocessed_data(dataset_ids=args.dataset_ids)
-        unique_seqs = df.groupby('SeqOrder').first().reset_index()
-        conditioning_df = unique_seqs[:args.num_conditioning].copy()
-        print(f"[OK] Using {len(conditioning_df)} examples from validation data")
+        # Get one row per customer (dataset_id)
+        conditioning_df = df.groupby('dataset_id').first().reset_index()
+        print(f"[OK] Loaded conditioning data for {len(conditioning_df)} customers")
 
-    # Generate sequences and counts
-    print("\nStep 3: Generating sequences and counts...")
+    # Generate sequences and counts (per customer)
+    print("\nStep 3: Generating sequences and counts (per customer)...")
     results_df = generate_sequences_and_counts(
         sequence_model,
         counts_model,
         conditioning_df,
         conditioning_scaler=conditioning_scaler,
-        num_samples=args.num_samples,
+        num_samples_per_customer=args.num_samples_per_customer,
         device=device,
         verbose=True
     )
@@ -198,7 +201,7 @@ def generate_pipeline(args):
     output_file = save_generated_results(results_df, filename=args.output_file)
 
     # Print examples
-    print_generation_examples(results_df, num_examples=min(5, args.num_conditioning))
+    print_generation_examples(results_df, num_examples=min(5, len(conditioning_df)))
 
     print(f"\n{'='*70}")
     print("GENERATION PIPELINE COMPLETE")
@@ -221,9 +224,10 @@ def evaluate_pipeline(args):
 
     generated_df = pd.read_csv(generated_file)
     print(f"[OK] Loaded generated results from {generated_file}")
-    print(f"  Total sequences: {generated_df['sample_idx'].nunique()}")
-    print(f"  Average length: {generated_df.groupby('sample_idx')['step'].max().mean():.1f}")
-    print(f"  Average total time: {generated_df.groupby('sample_idx')['total_time'].first().mean():.1f}s")
+    print(f"  Total customers: {generated_df['SN'].nunique()}")
+    print(f"  Total sequences: {len(generated_df.groupby(['SN', 'sample_idx']))}")
+    print(f"  Average length: {generated_df.groupby(['SN', 'sample_idx'])['step'].max().mean():.1f}")
+    print(f"  Average total time: {generated_df.groupby(['SN', 'sample_idx'])['total_time'].first().mean():.1f}s")
 
     # Load true data for comparison
     print("\n[OK] Loading true data for comparison...")
@@ -231,10 +235,13 @@ def evaluate_pipeline(args):
 
     # Compute statistics
     true_lengths = df.groupby('SeqOrder').size()
-    true_total_times = df.groupby('SeqOrder')['true_total_time'].first()
+    if 'true_total_time' in df.columns:
+        true_total_times = df.groupby('SeqOrder')['true_total_time'].first()
+    else:
+        true_total_times = df.groupby('SeqOrder')['step_duration'].sum()
 
-    generated_lengths = generated_df.groupby(['conditioning_idx', 'sample_idx']).size()
-    generated_total_times = generated_df.groupby(['conditioning_idx', 'sample_idx'])['total_time'].first()
+    generated_lengths = generated_df.groupby(['SN', 'sample_idx']).size()
+    generated_total_times = generated_df.groupby(['SN', 'sample_idx'])['total_time'].first()
 
     print(f"\n{'='*70}")
     print("COMPARISON STATISTICS")
@@ -278,11 +285,10 @@ def main():
     train_parser.add_argument('--skip-counts', action='store_true', help='Skip counts model training')
 
     # Generate command
-    generate_parser = subparsers.add_parser('generate', help='Generate sequences and counts')
-    generate_parser.add_argument('--dataset-ids', nargs='+', default=None, help='Dataset IDs for conditioning')
-    generate_parser.add_argument('--conditioning-file', type=str, default=None, help='CSV file with conditioning data')
-    generate_parser.add_argument('--num-conditioning', type=int, default=10, help='Number of conditioning examples')
-    generate_parser.add_argument('--num-samples', type=int, default=5, help='Samples per conditioning')
+    generate_parser = subparsers.add_parser('generate', help='Generate sequences and counts per customer')
+    generate_parser.add_argument('--dataset-ids', nargs='+', default=None, help='Dataset IDs (customers) for generation')
+    generate_parser.add_argument('--conditioning-file', type=str, default=None, help='CSV file with conditioning data (must have dataset_id column)')
+    generate_parser.add_argument('--num-samples-per-customer', type=int, default=15, help='Number of sequences to generate per customer (default: 15)')
     generate_parser.add_argument('--output-file', type=str, default='generated_sequences.csv', help='Output filename')
     generate_parser.add_argument('--use-gpu', action='store_true', help='Use GPU if available')
 
