@@ -94,6 +94,8 @@ def generate_sequences_and_counts(
     conditioning_data,
     conditioning_scaler=None,
     num_samples_per_customer=15,
+    sequences_per_customer=None,
+    remove_repetitions=True,
     device='cpu',
     verbose=True
 ):
@@ -109,6 +111,8 @@ def generate_sequences_and_counts(
         conditioning_data: DataFrame with conditioning features and dataset_id
         conditioning_scaler: Scaler for conditioning features
         num_samples_per_customer: Number of sequences to generate per customer (default: 15)
+        sequences_per_customer: Dict mapping dataset_id to number of sequences (overrides num_samples_per_customer if provided)
+        remove_repetitions: Whether to filter excessive consecutive token repetitions (default: True)
         device: torch device
         verbose: Whether to print progress
 
@@ -133,16 +137,28 @@ def generate_sequences_and_counts(
     customers = conditioning_data['dataset_id'].unique()
     num_customers = len(customers)
 
+    # Calculate total sequences to generate
+    if sequences_per_customer is not None:
+        total_sequences = sum(sequences_per_customer.get(str(c), num_samples_per_customer) for c in customers)
+        avg_samples = total_sequences / num_customers
+    else:
+        total_sequences = num_customers * num_samples_per_customer
+        avg_samples = num_samples_per_customer
+
     if verbose:
         print(f"\n{'='*70}")
         print(f"GENERATING SEQUENCES AND COUNTS (PER CUSTOMER)")
         print(f"{'='*70}\n")
         print(f"Number of customers: {num_customers}")
-        print(f"Samples per customer: {num_samples_per_customer}")
-        print(f"Total sequences to generate: {num_customers * num_samples_per_customer}\n")
+        print(f"Average samples per customer: {avg_samples:.1f}")
+        print(f"Total sequences to generate: {total_sequences}")
+        print(f"Remove repetitions: {remove_repetitions}\n")
 
     with torch.no_grad():
         for customer_idx, dataset_id in enumerate(tqdm(customers, desc="Generating per customer", disable=not verbose)):
+            # Convert dataset_id to string for consistent lookup
+            dataset_id_str = str(dataset_id)
+
             # Get conditioning data for this customer (use first row as representative)
             customer_data = conditioning_data[conditioning_data['dataset_id'] == dataset_id].iloc[0]
             conditioning_array = np.array([customer_data[feat] for feat in CONDITIONING_FEATURES], dtype=np.float32)
@@ -150,8 +166,17 @@ def generate_sequences_and_counts(
             if conditioning_scaler is not None:
                 conditioning_array = conditioning_scaler.transform(conditioning_array.reshape(1, -1))[0]
 
-            # Repeat conditioning for num_samples_per_customer
-            batch_cond = torch.from_numpy(conditioning_array).float().unsqueeze(0).repeat(num_samples_per_customer, 1).to(device)
+            # Determine how many sequences to generate for this customer
+            if sequences_per_customer is not None:
+                # Use string key for lookup (already converted to strings in main_pipeline.py)
+                customer_num_samples = sequences_per_customer.get(dataset_id_str, num_samples_per_customer)
+                if verbose and customer_idx < 5:  # Print first 5 for debugging
+                    print(f"  Customer {dataset_id_str}: generating {customer_num_samples} sequences")
+            else:
+                customer_num_samples = num_samples_per_customer
+
+            # Repeat conditioning for customer_num_samples
+            batch_cond = torch.from_numpy(conditioning_array).float().unsqueeze(0).repeat(customer_num_samples, 1).to(device)
 
             # Step 1: Generate symbolic sequences
             max_gen_length = min(SEQUENCE_SAMPLING_CONFIG['max_length'], sequence_model.max_seq_len - 1)
@@ -161,14 +186,14 @@ def generate_sequences_and_counts(
                 temperature=SEQUENCE_SAMPLING_CONFIG['temperature'],
                 top_k=SEQUENCE_SAMPLING_CONFIG['top_k'],
                 top_p=SEQUENCE_SAMPLING_CONFIG['top_p']
-            )  # [num_samples_per_customer, seq_len]
+            )  # [customer_num_samples, seq_len]
 
             # Extract BodyGroup information from conditioning data
             bodygroup_from = int(customer_data['BodyGroup_from'])
             bodygroup_to = int(customer_data['BodyGroup_to'])
 
             # Step 2: For each generated sequence, predict counts
-            for sample_idx in range(num_samples_per_customer):
+            for sample_idx in range(customer_num_samples):
                 tokens = generated_tokens[sample_idx]
                 cond = batch_cond[sample_idx:sample_idx+1]
 
@@ -179,8 +204,11 @@ def generate_sequences_and_counts(
                 else:
                     end_idx = len(token_list)
 
-                # Remove excessive repetitions (fix for MRI_MSR_104 and other tokens)
-                token_list_filtered = remove_excessive_repetitions(token_list[:end_idx], max_consecutive_repeats=2)
+                # Remove excessive repetitions if enabled (fix for MRI_MSR_104 and other tokens)
+                if remove_repetitions:
+                    token_list_filtered = remove_excessive_repetitions(token_list[:end_idx], max_consecutive_repeats=2)
+                else:
+                    token_list_filtered = token_list[:end_idx]
                 end_idx = len(token_list_filtered)
 
                 # Convert back to tensor
@@ -228,7 +256,7 @@ def generate_sequences_and_counts(
                         continue
 
                     results.append({
-                        'SN': dataset_id,  # Add customer serial number
+                        'SN': dataset_id_str,  # Add customer serial number
                         'customer_idx': customer_idx,
                         'sample_idx': sample_idx,
                         'step': filtered_step,

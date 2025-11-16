@@ -1,0 +1,16 @@
+# Dashboard Framework
+dash==2.14.2
+dash-bootstrap-components==1.5.0
+plotly==5.18.0
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.2
+
+# Utilities
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Server
+gunicorn==21.2.0
+waitress==2.1.2

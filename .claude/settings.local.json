@@ -3,7 +3,14 @@
     "allow": [
       "Bash(python:*)",
       "Bash(taskkill:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(tree:*)",
+      "Bash(docker-compose restart:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose logs:*)"
     ],
     "deny": [],
     "ask": []

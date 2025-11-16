@@ -184,6 +184,20 @@ def generate_pipeline(args):
         conditioning_df = df.groupby('dataset_id').first().reset_index()
         print(f"[OK] Loaded conditioning data for {len(conditioning_df)} customers")
 
+    # Calculate number of sequences per customer from original data (to match input volume)
+    print("\nStep 2b: Calculating sequence counts per customer...")
+    if args.match_input_volume:
+        df_full = load_preprocessed_data(dataset_ids=args.dataset_ids)
+        sequences_per_customer = df_full.groupby('dataset_id')['SeqOrder'].nunique().to_dict()
+        # Convert all keys to strings for consistent lookup
+        sequences_per_customer = {str(k): v for k, v in sequences_per_customer.items()}
+        print(f"[OK] Will generate matching number of sequences per customer (avg: {np.mean(list(sequences_per_customer.values())):.1f})")
+        print(f"    Example: Customer 141049 will generate {sequences_per_customer.get('141049', 'N/A')} sequences")
+        print(f"    Total sequences to generate: {sum(sequences_per_customer.values())}")
+    else:
+        sequences_per_customer = None
+        print(f"[OK] Will generate {args.num_samples_per_customer} sequences per customer")
+
     # Generate sequences and counts (per customer)
     print("\nStep 3: Generating sequences and counts (per customer)...")
     results_df = generate_sequences_and_counts(
@@ -192,6 +206,8 @@ def generate_pipeline(args):
         conditioning_df,
         conditioning_scaler=conditioning_scaler,
         num_samples_per_customer=args.num_samples_per_customer,
+        sequences_per_customer=sequences_per_customer,
+        remove_repetitions=not args.keep_repetitions,
         device=device,
         verbose=True
     )
@@ -288,7 +304,9 @@ def main():
     generate_parser = subparsers.add_parser('generate', help='Generate sequences and counts per customer')
     generate_parser.add_argument('--dataset-ids', nargs='+', default=None, help='Dataset IDs (customers) for generation')
     generate_parser.add_argument('--conditioning-file', type=str, default=None, help='CSV file with conditioning data (must have dataset_id column)')
-    generate_parser.add_argument('--num-samples-per-customer', type=int, default=15, help='Number of sequences to generate per customer (default: 15)')
+    generate_parser.add_argument('--num-samples-per-customer', type=int, default=15, help='Number of sequences to generate per customer (default: 15, ignored if --match-input-volume is set)')
+    generate_parser.add_argument('--match-input-volume', action='store_true', help='Generate same number of sequences as input data per customer')
+    generate_parser.add_argument('--keep-repetitions', action='store_true', help='Keep consecutive token repetitions (do not filter)')
     generate_parser.add_argument('--output-file', type=str, default='generated_sequences.csv', help='Output filename')
     generate_parser.add_argument('--use-gpu', action='store_true', help='Use GPU if available')
 

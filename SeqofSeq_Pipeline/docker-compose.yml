@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  seqofseq:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: seqofseq_pipeline
+    volumes:
+      # Mount entire project for live code updates
+      - .:/app
+      # Override data directories to persist on host
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./saved_models:/app/saved_models
+      - ./visualizations:/app/visualizations
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0  # Change to enable GPU
+    # Uncomment below to enable GPU support (requires nvidia-docker)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+  # Optional: Jupyter notebook service for interactive development
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: seqofseq_jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./:/app
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+    command: >
+      bash -c "pip install jupyter jupyterlab &&
+               jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root"
