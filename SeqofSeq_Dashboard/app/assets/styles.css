@@ -1,0 +1,711 @@
+/* Modern Design System for SeqofSeq Dashboard */
+
+:root {
+    --primary-color: #2563eb;
+    --primary-dark: #1e40af;
+    --primary-light: #60a5fa;
+    --secondary-color: #7c3aed;
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --dark-bg: #0f172a;
+    --card-bg: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --border-color: #334155;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+}
+
+/* Global Styles - FORCE DARK MODE */
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--dark-bg) !important;
+    background: var(--dark-bg) !important;
+    color: var(--text-primary) !important;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+/* Force all white backgrounds to be transparent or dark */
+div[style*="background: white"],
+div[style*="background-color: white"],
+div[style*="background: #fff"],
+div[style*="background-color: #fff"],
+div[style*="background: #ffffff"],
+div[style*="background-color: #ffffff"] {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* Header Styles */
+.dashboard-header {
+    background: linear-gradient(135deg, #0a0f1e 0%, #1a1f35 100%);
+    padding: 1.75rem 2rem;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+    border-bottom: 2px solid rgba(37, 99, 235, 0.3);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    backdrop-filter: blur(10px);
+}
+
+.header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+
+.header-title {
+    font-size: 2.25rem;
+    font-weight: 800;
+    margin: 0;
+    background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary-color) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    filter: drop-shadow(0 2px 8px rgba(37, 99, 235, 0.3));
+}
+
+.header-subtitle {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    font-weight: 400;
+    letter-spacing: 0.5px;
+}
+
+/* Button Styles - Consistent with Tabs */
+.btn-light {
+    background: transparent !important;
+    border: 1px solid #A0AEC0 !important;
+    color: #A0AEC0 !important;
+    font-weight: 600 !important;
+    padding: 0.625rem 1.25rem !important;
+    border-radius: 10px !important;
+    transition: all 0.25s ease !important;
+    box-shadow: none !important;
+}
+
+.btn-light:hover {
+    background: linear-gradient(135deg, #4A4AFF 0%, #3A8BFF 100%) !important;
+    border-color: transparent !important;
+    color: #FFFFFF !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(74, 74, 255, 0.4) !important;
+}
+
+/* Main Container */
+.main-container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+/* Card Styles */
+.metric-card, .chart-card {
+    background: linear-gradient(135deg, var(--card-bg) 0%, rgba(30, 41, 59, 0.8) 100%);
+    border-radius: 16px;
+    padding: 2rem 1.5rem;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.metric-card::before, .chart-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.metric-card:hover, .chart-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5), 0 0 40px rgba(37, 99, 235, 0.15);
+    border-color: var(--primary-color);
+}
+
+.metric-card:hover::before, .chart-card:hover::before {
+    opacity: 1;
+}
+
+.metric-card {
+    text-align: center;
+    min-height: 180px;
+    min-width: 220px;
+    padding: 2rem 1.5rem;
+}
+
+.metric-value {
+    font-size: 2.75rem;
+    font-weight: 800;
+    color: var(--primary-light);
+    margin: 1rem 0;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: visible;
+    display: block;
+}
+
+.metric-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    font-weight: 600;
+    margin-top: 0.75rem;
+    line-height: 1.5;
+    white-space: normal;
+}
+
+.metric-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    opacity: 0.8;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* Chart Card */
+.chart-card {
+    padding: 2rem;
+}
+
+.chart-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 1.25rem;
+    color: var(--text-primary);
+    padding-bottom: 0.875rem;
+    border-bottom: 3px solid var(--primary-color);
+    letter-spacing: 0.3px;
+}
+
+/* Section Headings */
+h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 3px solid transparent;
+    border-image: linear-gradient(90deg, var(--primary-color) 0%, var(--secondary-color) 50%, transparent 100%);
+    border-image-slice: 1;
+    letter-spacing: 0.5px;
+    position: relative;
+}
+
+h3 {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* Tabs - Dark Mode Only - NO WHITE */
+.custom-tabs {
+    background: linear-gradient(135deg, #1a2332 0%, #0d1322 100%) !important;
+    border-radius: 12px !important;
+    padding: 0.375rem !important;
+    margin-bottom: 2rem !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    border: none !important;
+    display: flex !important;
+    gap: 0.25rem !important;
+}
+
+/* Force override any Dash defaults */
+.custom-tabs > div {
+    background: transparent !important;
+}
+
+/* Inactive Tabs - ABSOLUTELY NO WHITE */
+.custom-tab {
+    padding: 0.875rem 1.75rem !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro', 'Segoe UI', 'Roboto', sans-serif !important;
+    font-weight: 400 !important;
+    font-size: 0.95rem !important;
+    border-radius: 10px !important;
+    transition: all 0.25s ease !important;
+    color: #A0AEC0 !important;
+    border: 1px solid transparent !important;
+    background-color: transparent !important;
+    background: transparent !important;
+    background-image: none !important;
+    position: relative !important;
+    letter-spacing: 0.01em !important;
+}
+
+/* Inactive Tab Hover - DARK ONLY */
+.custom-tab:hover {
+    color: #FFFFFF !important;
+    background-color: #3E4A5C !important;
+    background: #3E4A5C !important;
+    background-image: none !important;
+}
+
+/* Active Tab - BLUE GRADIENT */
+.custom-tab--selected {
+    background: linear-gradient(135deg, #4A4AFF 0%, #3A8BFF 100%) !important;
+    background-color: #4A4AFF !important;
+    color: #FFFFFF !important;
+    font-weight: 600 !important;
+    box-shadow: 0 4px 12px rgba(74, 74, 255, 0.4) !important;
+    border: none !important;
+}
+
+/* Active Tab Hover - No Change */
+.custom-tab--selected:hover {
+    background: linear-gradient(135deg, #4A4AFF 0%, #3A8BFF 100%) !important;
+    background-color: #4A4AFF !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 4px 12px rgba(74, 74, 255, 0.4) !important;
+}
+
+/* Override ALL Dash Tab component defaults - NO WHITE ANYWHERE */
+.custom-tabs .tab,
+.custom-tabs > div > div,
+.custom-tabs > div > div > div,
+div[class*="tab"]:not([class*="selected"]) {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+.custom-tabs .tab:not(.tab--selected),
+.custom-tabs div:not([class*="selected"]) {
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #A0AEC0 !important;
+}
+
+.custom-tabs .tab--selected,
+.custom-tabs [class*="selected"] {
+    background: linear-gradient(135deg, #4A4AFF 0%, #3A8BFF 100%) !important;
+    background-color: #4A4AFF !important;
+    color: #FFFFFF !important;
+}
+
+/* Nuclear option: override all Dash Tabs defaults */
+div[data-dash-is-loading],
+div[id*="tabs"],
+div[id*="tab"] {
+    background: transparent !important;
+}
+
+/* Catch any remaining white backgrounds in tabs */
+.custom-tabs * {
+    background-color: inherit !important;
+}
+
+.custom-tabs .custom-tab:not(.custom-tab--selected) * {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+/* Filters */
+.filter-container {
+    background-color: var(--card-bg);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+}
+
+.filter-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--primary-color);
+}
+
+/* Dropdowns and Inputs */
+.Select-control, .dash-dropdown {
+    background-color: var(--dark-bg) !important;
+    border: 2px solid var(--border-color) !important;
+    border-radius: 10px !important;
+    color: var(--text-primary) !important;
+    padding: 0.5rem !important;
+    transition: all 0.3s ease !important;
+}
+
+.Select-control:hover, .dash-dropdown:hover {
+    border-color: var(--primary-color) !important;
+}
+
+.Select-control:focus, .dash-dropdown:focus {
+    border-color: var(--primary-color) !important;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2) !important;
+}
+
+.Select-menu-outer {
+    background-color: var(--card-bg) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 10px !important;
+    box-shadow: var(--shadow-lg) !important;
+}
+
+.Select-option {
+    background-color: var(--card-bg) !important;
+    color: var(--text-primary) !important;
+    padding: 0.75rem 1rem !important;
+    transition: background-color 0.2s ease !important;
+}
+
+.Select-option:hover {
+    background-color: var(--primary-color) !important;
+    color: white !important;
+}
+
+/* Grid Layout */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(550px, 1fr));
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Apply fade-in to cards */
+.metric-card, .chart-card, .filter-container {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Loading State */
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    gap: 1.5rem;
+}
+
+.loading-spinner {
+    border: 5px solid var(--border-color);
+    border-top: 5px solid var(--primary-color);
+    border-right: 5px solid var(--secondary-color);
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    animation: spin 1s linear infinite;
+}
+
+.loading-container p {
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-secondary);
+}
+
+.empty-state-icon {
+    font-size: 5rem;
+    opacity: 0.3;
+    margin-bottom: 1.5rem;
+    animation: pulse 3s ease-in-out infinite;
+}
+
+.empty-state h2 {
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+}
+
+.empty-state p {
+    font-size: 1.05rem;
+    line-height: 1.6;
+}
+
+/* Responsive Design */
+@media (max-width: 1600px) {
+    .metrics-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+}
+
+@media (max-width: 1200px) {
+    .metrics-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+@media (max-width: 1024px) {
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .main-container {
+        padding: 1rem;
+    }
+
+    .header-title {
+        font-size: 1.75rem;
+    }
+
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+
+    .metric-card {
+        min-height: 160px;
+        min-width: 180px;
+        padding: 1.5rem 1rem;
+    }
+
+    .metric-value {
+        font-size: 2.25rem;
+    }
+
+    .metric-label {
+        font-size: 0.8rem;
+    }
+
+    .metric-icon {
+        font-size: 2rem;
+    }
+
+    h2 {
+        font-size: 1.5rem;
+    }
+
+    .custom-tabs {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .custom-tab {
+        padding: 0.75rem 1.25rem;
+        font-size: 0.875rem;
+    }
+}
+
+@media (max-width: 580px) {
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .metric-card {
+        min-height: 140px;
+        max-width: 100%;
+    }
+}
+
+/* Table Styles */
+.dash-table-container {
+    background-color: var(--card-bg);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+}
+
+.dash-spreadsheet {
+    font-family: inherit;
+}
+
+.dash-spreadsheet-container {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.dash-spreadsheet-inner table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+}
+
+.dash-spreadsheet-inner th {
+    background: linear-gradient(135deg, var(--dark-bg) 0%, #1a2332 100%);
+    color: var(--text-primary);
+    font-weight: 700;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 3px solid var(--primary-color);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    text-align: left;
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+}
+
+.dash-spreadsheet-inner td {
+    background-color: var(--card-bg);
+    color: var(--text-primary);
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+    font-size: 0.925rem;
+}
+
+.dash-spreadsheet-inner tr:hover td {
+    background-color: rgba(37, 99, 235, 0.15);
+    transition: background-color 0.2s ease;
+}
+
+/* Bootstrap Table Styles */
+.table-dark {
+    background-color: var(--card-bg) !important;
+    color: var(--text-primary) !important;
+}
+
+.table-dark thead th {
+    background: linear-gradient(135deg, var(--dark-bg) 0%, #1a2332 100%) !important;
+    color: var(--text-primary) !important;
+    font-weight: 700 !important;
+    border-bottom: 3px solid var(--primary-color) !important;
+    padding: 1.25rem 1rem !important;
+    letter-spacing: 0.5px !important;
+}
+
+.table-dark tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+.table-dark tbody tr:hover {
+    background-color: rgba(37, 99, 235, 0.15) !important;
+}
+
+.table-dark td {
+    padding: 1rem !important;
+    border-color: rgba(51, 65, 85, 0.5) !important;
+}
+
+/* Plotly Chart Overrides */
+.js-plotly-plot .plotly .modebar {
+    background-color: transparent !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn {
+    color: var(--text-secondary) !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn:hover {
+    color: var(--text-primary) !important;
+}
+
+/* Scrollbar Styles */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--dark-bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-color);
+}
+
+/* Labels and Form Elements */
+label {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+    display: inline-block;
+}
+
+/* Utility Classes */
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mb-3 { margin-bottom: 1.5rem; }
+.mb-4 { margin-bottom: 2rem; }
+
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-3 { margin-top: 1.5rem; }
+.mt-4 { margin-top: 2rem; }
+
+.text-center { text-align: center; }
+.text-muted {
+    color: var(--text-secondary) !important;
+    font-size: 0.925rem;
+}
+.text-primary { color: var(--primary-light) !important; }
+.text-success { color: var(--success-color) !important; }
+.text-warning { color: var(--warning-color) !important; }
+.text-danger { color: var(--danger-color) !important; }
+.text-info { color: #06b6d4 !important; }
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Selection styling */
+::selection {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+::-moz-selection {
+    background-color: var(--primary-color);
+    color: white;
+}

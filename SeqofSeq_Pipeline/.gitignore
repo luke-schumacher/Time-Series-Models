@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Data
+data/preprocessed/*
+!data/.gitkeep
+
+# Outputs
+outputs/*
+!outputs/.gitkeep
+saved_models/*
+!saved_models/.gitkeep
+visualizations/*
+!visualizations/.gitkeep
+
+# Logs
+*.log
+training_output.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

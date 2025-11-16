@@ -1,0 +1,48 @@
+services:
+  # Main Dashboard Service
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: seqofseq_dashboard
+    ports:
+      - "8050:8050"
+    volumes:
+      # Mount the local data folder (for standalone deployment)
+      - ./data:/app/data:ro
+      # Optional: Mount app code for development
+      # - ./app:/app/app:ro
+    environment:
+      - DATA_PATH=/app/data/generated_sequences.csv
+      - PORT=8050
+      - DEBUG=false
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    networks:
+      - seqofseq-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8050', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      - "com.seqofseq.service=dashboard"
+      - "com.seqofseq.description=MRI Sequence Prediction Dashboard"
+
+networks:
+  seqofseq-network:
+    driver: bridge
+    name: seqofseq-network
+
+# To run:
+# docker-compose up -d
+#
+# To stop:
+# docker-compose down
+#
+# To view logs:
+# docker-compose logs -f dashboard
+#
+# To rebuild:
+# docker-compose up -d --build
