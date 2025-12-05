@@ -52,7 +52,8 @@ SPECIAL_TOKENS = {
     'PAD': 0,
     'START': 1,
     'END': 2,
-    'UNK': 3
+    'UNK': 3,
+    'PAUSE': 4
 }
 
 # Token ID constants for easy access
@@ -60,6 +61,7 @@ PAD_TOKEN_ID = 0
 START_TOKEN_ID = 1
 END_TOKEN_ID = 2
 UNK_TOKEN_ID = 3
+PAUSE_TOKEN_ID = 4
 VOCAB_SIZE = None  # Will be set after preprocessing
 
 # Vocabulary will be built from unique Sequences in the data
