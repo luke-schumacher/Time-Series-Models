@@ -52,7 +52,8 @@ SOURCEID_VOCAB = {
     'END': 14,          # Sequence end marker
     'MRI_MSR_34': 15,
     'MRI_FRR_256': 16,
-    'UNK': 17           # Unknown token
+    'UNK': 17,          # Unknown token
+    'PAUSE': 18         # Pause event marker
 }
 
 VOCAB_SIZE = len(SOURCEID_VOCAB)

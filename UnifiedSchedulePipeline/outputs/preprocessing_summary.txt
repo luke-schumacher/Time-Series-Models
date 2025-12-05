@@ -1,0 +1,10 @@
+DATA PREPROCESSING SUMMARY
+================================================================================
+
+Date: 2025-12-05 11:11:33
+Pause threshold: 5 minutes
+
+PXChange: 40 files, 141,201 events, -25,338 pauses
+SeqofSeq: 1 files, 4,527 scans, 374 pauses
+
+Total: 145,728 data points, -24,964 pauses (-17.13%)
