@@ -13,15 +13,21 @@ import pickle
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import (
-    DATA_DIR, CONDITIONING_FEATURES, SPECIAL_TOKENS,
-    MAX_SEQ_LEN, RANDOM_SEED, COIL_FEATURES_PREFIX
+from SeqofSeq_Pipeline.config import (
+    CONDITIONING_FEATURES, MAX_SEQ_LEN,
+    PAD_TOKEN_ID, START_TOKEN_ID, END_TOKEN_ID, IDLE_TOKEN_ID,
+    SPECIAL_TOKENS, IDLE_STATE_ENCODING
 )
 
 
 class MRISequenceDataset(Dataset):
     """
     Dataset for MRI scan sequences with conditioning information.
+
+    Updated to support pseudo-patient architecture:
+    - entity_type feature included in conditioning (5 features instead of 4)
+    - IDLE tokens supported for pseudo-patient sequences
+    - Validates that IDLE tokens only appear in pseudo-patient sequences
 
     Returns:
         conditioning: Patient/scan context features [batch_size, conditioning_dim]
@@ -87,6 +93,10 @@ class MRISequenceDataset(Dataset):
         # Replace any NaN values with 0 before scaling
         conditioning = np.nan_to_num(conditioning, nan=0.0)
 
+        # Note: entity_type is automatically included via CONDITIONING_FEATURES
+        # It's the 5th feature (after BodyPart, SystemType, Country, Group)
+        # Values: REAL_PATIENT=0, PSEUDO_PATIENT_PAUSE=1, etc.
+
         if self.conditioning_scaler is not None:
             conditioning = self.conditioning_scaler.transform(conditioning.reshape(1, -1))[0]
             # Replace any NaN from scaling with 0
@@ -102,7 +112,7 @@ class MRISequenceDataset(Dataset):
         seq_len = len(sequence_tokens)
 
         # Create padded arrays
-        padded_tokens = np.full(MAX_SEQ_LEN, SPECIAL_TOKENS['PAD'], dtype=np.int64)
+        padded_tokens = np.full(MAX_SEQ_LEN, PAD_TOKEN_ID, dtype=np.int64)
         padded_durations = np.zeros(MAX_SEQ_LEN, dtype=np.float32)
         mask = np.zeros(MAX_SEQ_LEN, dtype=np.bool_)
 

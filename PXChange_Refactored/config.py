@@ -30,7 +30,8 @@ CONDITIONING_FEATURES = [
     'Height',
     'BodyGroup_from',
     'BodyGroup_to',
-    'PTAB'
+    'PTAB',
+    'entity_type'       # NEW: REAL_PATIENT=0 or PSEUDO_PATIENT_*=1/2/3
 ]
 
 # Symbolic sequence vocabulary (sourceID tokens)
@@ -52,14 +53,23 @@ SOURCEID_VOCAB = {
     'END': 14,          # Sequence end marker
     'MRI_MSR_34': 15,
     'MRI_FRR_256': 16,
-    'UNK': 17,          # Unknown token
-    'PAUSE': 18         # Pause event marker
+    'UNK': 17           # Unknown token
+    # 'PAUSE': 18 removed - handled via pseudo-patient entities
 }
 
-VOCAB_SIZE = len(SOURCEID_VOCAB)
+# Pseudo-patient tokens (only used in pseudo-patient sequences)
+PSEUDO_PATIENT_TOKENS = {
+    'IDLE': 18  # Represents machine idle state (reuses ID 18)
+}
+
+VOCAB_SIZE = 19  # 18 sourceID tokens + IDLE token
 START_TOKEN_ID = 11
 END_TOKEN_ID = 14
 PAD_TOKEN_ID = 0
+IDLE_TOKEN_ID = 18  # Only appears in pseudo-patient sequences
+
+# Special encoding for anatomical features when machine is idle
+IDLE_STATE_ENCODING = -1  # Used for BodyGroup_from, BodyGroup_to when entity_type != REAL_PATIENT
 
 # Additional sequence features (encoded alongside sourceID)
 SEQUENCE_FEATURE_COLUMNS = [

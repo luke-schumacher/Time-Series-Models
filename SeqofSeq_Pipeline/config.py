@@ -29,7 +29,8 @@ CONDITIONING_FEATURES = [
     'BodyPart_encoded',      # Which body part is being scanned
     'SystemType_encoded',    # Type of MRI system
     'Country_encoded',       # Geographic location
-    'Group_encoded'          # Scan group/category
+    'Group_encoded',         # Scan group/category
+    'entity_type'            # NEW: REAL_PATIENT=0 or PSEUDO_PATIENT_*=1/2/3
 ]
 
 # Coil features (boolean indicators for which coils are connected)
@@ -52,8 +53,13 @@ SPECIAL_TOKENS = {
     'PAD': 0,
     'START': 1,
     'END': 2,
-    'UNK': 3,
-    'PAUSE': 4
+    'UNK': 3
+    # PAUSE removed - handled via pseudo-patient entities
+}
+
+# Pseudo-patient tokens (only used in pseudo-patient sequences)
+PSEUDO_PATIENT_TOKENS = {
+    'IDLE': 4  # Represents machine idle state (only in pseudo-patient sequences)
 }
 
 # Token ID constants for easy access
@@ -61,8 +67,11 @@ PAD_TOKEN_ID = 0
 START_TOKEN_ID = 1
 END_TOKEN_ID = 2
 UNK_TOKEN_ID = 3
-PAUSE_TOKEN_ID = 4
+IDLE_TOKEN_ID = 4  # Only appears in pseudo-patient sequences
 VOCAB_SIZE = None  # Will be set after preprocessing
+
+# Special encoding for anatomical features when machine is idle
+IDLE_STATE_ENCODING = -1  # Used for BodyPart_encoded, Group_encoded when entity_type != REAL_PATIENT
 
 # Vocabulary will be built from unique Sequences in the data
 # Estimated: ~30 unique sequences + special tokens = ~35 vocab size

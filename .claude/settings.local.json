@@ -13,7 +13,15 @@
       "Bash(docker-compose logs:*)",
       "Bash(powershell -Command \"(Get-Content ''C:\\Users\\lukis\\Documents\\GitHub\\Time-Series-Models\\SeqofSeq_Pipeline\\data\\176625.csv'' -First 1).Split('','').Count\")",
       "Bash(wc:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(timeout 180 python:*)",
+      "Bash(cat:*)",
+      "Bash(powershell -Command \"cd ''C:\\Users\\lukis\\Documents\\GitHub\\Time-Series-Models\\UnifiedSchedulePipeline\\evaluation''; python quick_validation_test.py\")",
+      "Bash(powershell -Command \"(Get-Content ''C:\\Users\\lukis\\Documents\\GitHub\\Time-Series-Models\\SeqofSeq_Pipeline\\data\\preprocessed_segmented\\175832_segmented.csv'' -First 1).Split('','').Count\")",
+      "Bash(powershell -Command \"\\(Get-Content ''141049_segmented.csv'' -First 1\\).Split\\('',''\\).Count\")",
+      "Bash(xargs du:*)",
+      "Bash(git rm:*)",
+      "Bash(xargs git rm:*)"
     ],
     "deny": [],
     "ask": []

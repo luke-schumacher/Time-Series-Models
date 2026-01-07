@@ -10,7 +10,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import COUNTS_MODEL_CONFIG, PAD_TOKEN_ID, VOCAB_SIZE
+from PXChange_Refactored.config import COUNTS_MODEL_CONFIG, PAD_TOKEN_ID, VOCAB_SIZE
 from models.layers import (
     PositionalEncoding, ConditioningProjection,
     CrossAttentionLayer, GammaOutputHead,

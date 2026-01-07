@@ -9,7 +9,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import (
+from SeqofSeq_Pipeline.config import (
     SEQUENCE_MODEL_CONFIG, START_TOKEN_ID, END_TOKEN_ID,
     PAD_TOKEN_ID, SEQUENCE_SAMPLING_CONFIG
 )

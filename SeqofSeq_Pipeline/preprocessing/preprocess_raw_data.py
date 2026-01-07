@@ -7,20 +7,24 @@ import numpy as np
 import pickle
 from datetime import datetime
 from sklearn.preprocessing import LabelEncoder
-from config import (
+from SeqofSeq_Pipeline.config import (
     DATA_DIR, SPECIAL_TOKENS, COIL_FEATURES_PREFIX,
     DATA_CONFIG, CONDITIONING_FEATURES
 )
 
 
-def load_raw_data(data_file='176625.csv'):
-    """Load raw MRI scan data from CSV."""
-    file_path = os.path.join(DATA_DIR, data_file)
+def load_raw_data(data_file_or_path):
+    """Load raw MRI scan data from CSV. Accepts filename or full path."""
+    if os.path.exists(data_file_or_path):
+        file_path = data_file_or_path
+    else:
+        file_path = os.path.join(DATA_DIR, data_file_or_path) # Default to DATA_DIR if not a full path
+
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Data file not found: {file_path}")
 
     df = pd.read_csv(file_path)
-    print(f"[OK] Loaded {len(df)} scans from {data_file}")
+    print(f"[OK] Loaded {len(df)} scans from {os.path.basename(file_path)}")
     return df
 
 
@@ -119,7 +123,7 @@ def group_scans_into_sequences(df):
     return sequences
 
 
-def preprocess_mri_data(data_file='176625.csv', save_preprocessed=True):
+def preprocess_mri_data(data_file_or_path='176625.csv', save_preprocessed=True):
     """
     Complete preprocessing pipeline for MRI scan data.
 
@@ -134,7 +138,7 @@ def preprocess_mri_data(data_file='176625.csv', save_preprocessed=True):
     print(f"{'='*70}\n")
 
     # Load raw data
-    df = load_raw_data(data_file)
+    df = load_raw_data(data_file_or_path)
 
     # Parse datetime columns
     print("Parsing datetime columns...")
