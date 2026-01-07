@@ -14,13 +14,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import (
     DATA_DIR, CONDITIONING_FEATURES, SEQUENCE_FEATURE_COLUMNS,
     MAX_SEQ_LEN, PAD_TOKEN_ID, START_TOKEN_ID, END_TOKEN_ID,
-    RANDOM_SEED
+    IDLE_TOKEN_ID, IDLE_STATE_ENCODING, RANDOM_SEED
 )
 
 
 class MRISequenceDataset(Dataset):
     """
     Dataset for MRI scan sequences with conditioning information.
+
+    Updated to support pseudo-patient architecture:
+    - entity_type feature included in conditioning (7 features instead of 6)
+    - IDLE tokens supported for pseudo-patient sequences
+    - Validates that IDLE tokens only appear in pseudo-patient sequences
 
     Returns:
         conditioning: Patient/scan context features [batch_size, conditioning_dim]
@@ -62,6 +67,11 @@ class MRISequenceDataset(Dataset):
         # Extract conditioning features (constant per sequence)
         first_row = seq_data.iloc[0]
         conditioning = np.array([first_row.get(feat, 0) for feat in CONDITIONING_FEATURES], dtype=np.float32)
+
+        # Note: entity_type is automatically included via CONDITIONING_FEATURES
+        # It's the 7th feature (after Age, Weight, Height, BodyGroup_from, BodyGroup_to, PTAB)
+        # Values: REAL_PATIENT=0, PSEUDO_PATIENT_PAUSE=1, etc.
+
         if self.conditioning_scaler is not None:
             conditioning = self.conditioning_scaler.transform(conditioning.reshape(1, -1))[0]
 

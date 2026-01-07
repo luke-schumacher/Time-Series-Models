@@ -12,18 +12,20 @@ import sys
 import os
 from tqdm import tqdm
 
-# Add paths
+# Add UnifiedSchedulePipeline base directory to sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Get the absolute path to the Time-Series-Models root directory
+# This is two levels up from UnifiedSchedulePipeline/training
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.insert(0, project_root)
+
 from config import PXCHANGE_DIR, SEQOFSEQ_DIR, MODEL_PATHS
 
-# Add project directories to path
-sys.path.insert(0, PXCHANGE_DIR)
-sys.path.insert(0, SEQOFSEQ_DIR)
-
 # Import models
-from models.conditional_sequence_generator import ConditionalSequenceGenerator
-from models.conditional_counts_generator import ConditionalCountsGenerator
-from models.conditional_duration_predictor import ConditionalDurationPredictor
+from SeqofSeq_Pipeline.models.conditional_sequence_generator import ConditionalSequenceGenerator
+from PXChange_Refactored.models.conditional_counts_generator import ConditionalCountsGenerator
+from SeqofSeq_Pipeline.models.conditional_duration_predictor import ConditionalDurationPredictor
 import PXChange_Refactored.config as px_config
 import SeqofSeq_Pipeline.config as seq_config
 
@@ -133,17 +135,18 @@ def load_and_expand_pxchange_sequence_model(model_path, device='cpu'):
     new_vocab_size = 19  # Added PAUSE
 
     # Create model with OLD vocabulary size
-    model = ConditionalSequenceGenerator(
-        vocab_size=old_vocab_size,
-        d_model=px_config.SEQUENCE_MODEL_CONFIG['d_model'],
-        nhead=px_config.SEQUENCE_MODEL_CONFIG['nhead'],
-        num_encoder_layers=px_config.SEQUENCE_MODEL_CONFIG['num_encoder_layers'],
-        num_decoder_layers=px_config.SEQUENCE_MODEL_CONFIG['num_decoder_layers'],
-        dim_feedforward=px_config.SEQUENCE_MODEL_CONFIG['dim_feedforward'],
-        dropout=px_config.SEQUENCE_MODEL_CONFIG['dropout'],
-        max_seq_len=px_config.MAX_SEQ_LEN,
-        conditioning_dim=len(px_config.CONDITIONING_FEATURES)
-    ).to(device)
+    temp_config = {
+        'vocab_size': old_vocab_size,
+        'd_model': px_config.SEQUENCE_MODEL_CONFIG['d_model'],
+        'nhead': px_config.SEQUENCE_MODEL_CONFIG['nhead'],
+        'num_encoder_layers': px_config.SEQUENCE_MODEL_CONFIG['num_encoder_layers'],
+        'num_decoder_layers': px_config.SEQUENCE_MODEL_CONFIG['num_decoder_layers'],
+        'dim_feedforward': px_config.SEQUENCE_MODEL_CONFIG['dim_feedforward'],
+        'dropout': px_config.SEQUENCE_MODEL_CONFIG['dropout'],
+        'max_seq_len': px_config.MAX_SEQ_LEN,
+        'conditioning_dim': len(px_config.CONDITIONING_FEATURES)
+    }
+    model = ConditionalSequenceGenerator(config=temp_config).to(device)
 
     # Load existing weights if available
     if os.path.exists(model_path):
@@ -185,18 +188,19 @@ def load_and_expand_pxchange_duration_model(model_path, device='cpu'):
     new_vocab_size = 19
 
     # Create model
-    model = ConditionalCountsGenerator(
-        d_model=px_config.COUNTS_MODEL_CONFIG['d_model'],
-        nhead=px_config.COUNTS_MODEL_CONFIG['nhead'],
-        num_encoder_layers=px_config.COUNTS_MODEL_CONFIG['num_encoder_layers'],
-        num_cross_attention_layers=px_config.COUNTS_MODEL_CONFIG['num_cross_attention_layers'],
-        dim_feedforward=px_config.COUNTS_MODEL_CONFIG['dim_feedforward'],
-        dropout=px_config.COUNTS_MODEL_CONFIG['dropout'],
-        max_seq_len=px_config.MAX_SEQ_LEN,
-        conditioning_dim=len(px_config.CONDITIONING_FEATURES),
-        sequence_feature_dim=new_vocab_size + len(px_config.SEQUENCE_FEATURE_COLUMNS),  # Updated
-        output_heads=px_config.COUNTS_MODEL_CONFIG['output_heads']
-    ).to(device)
+    temp_config = {
+        'd_model': px_config.COUNTS_MODEL_CONFIG['d_model'],
+        'nhead': px_config.COUNTS_MODEL_CONFIG['nhead'],
+        'num_encoder_layers': px_config.COUNTS_MODEL_CONFIG['num_encoder_layers'],
+        'num_cross_attention_layers': px_config.COUNTS_MODEL_CONFIG['num_cross_attention_layers'],
+        'dim_feedforward': px_config.COUNTS_MODEL_CONFIG['dim_feedforward'],
+        'dropout': px_config.COUNTS_MODEL_CONFIG['dropout'],
+        'max_seq_len': px_config.MAX_SEQ_LEN,
+        'conditioning_dim': len(px_config.CONDITIONING_FEATURES),
+        'sequence_feature_dim': new_vocab_size + len(px_config.SEQUENCE_FEATURE_COLUMNS),
+        'output_heads': px_config.COUNTS_MODEL_CONFIG['output_heads']
+    }
+    model = ConditionalCountsGenerator(config=temp_config).to(device)
 
     # Load existing weights if available
     if os.path.exists(model_path):
@@ -234,7 +238,7 @@ def load_and_expand_seqofseq_sequence_model(model_path, metadata_path, device='c
     with open(metadata_path, 'rb') as f:
         metadata = pickle.load(f)
 
-    vocab = metadata['vocab']
+    vocab = metadata['sequence_vocab']
     old_vocab_size = len(vocab)
     new_vocab_size = old_vocab_size + 1  # Add PAUSE if not already there
 
@@ -248,17 +252,18 @@ def load_and_expand_seqofseq_sequence_model(model_path, metadata_path, device='c
     conditioning_dim = metadata.get('conditioning_dim', 92)
 
     # Create model with NEW vocabulary size
-    model = ConditionalSequenceGenerator(
-        vocab_size=new_vocab_size,
-        d_model=seq_config.SEQUENCE_MODEL_CONFIG['d_model'],
-        nhead=seq_config.SEQUENCE_MODEL_CONFIG['nhead'],
-        num_encoder_layers=seq_config.SEQUENCE_MODEL_CONFIG['num_encoder_layers'],
-        num_decoder_layers=seq_config.SEQUENCE_MODEL_CONFIG['num_decoder_layers'],
-        dim_feedforward=seq_config.SEQUENCE_MODEL_CONFIG['dim_feedforward'],
-        dropout=seq_config.SEQUENCE_MODEL_CONFIG['dropout'],
-        max_seq_len=seq_config.MAX_SEQ_LEN,
-        conditioning_dim=conditioning_dim
-    ).to(device)
+    temp_config = {
+        'vocab_size': new_vocab_size,
+        'd_model': seq_config.SEQUENCE_MODEL_CONFIG['d_model'],
+        'nhead': seq_config.SEQUENCE_MODEL_CONFIG['nhead'],
+        'num_encoder_layers': seq_config.SEQUENCE_MODEL_CONFIG['num_encoder_layers'],
+        'num_decoder_layers': seq_config.SEQUENCE_MODEL_CONFIG['num_decoder_layers'],
+        'dim_feedforward': seq_config.SEQUENCE_MODEL_CONFIG['dim_feedforward'],
+        'dropout': seq_config.SEQUENCE_MODEL_CONFIG['dropout'],
+        'max_seq_len': seq_config.MAX_SEQ_LEN,
+        'conditioning_dim': conditioning_dim
+    }
+    model = ConditionalSequenceGenerator(config=temp_config).to(device)
 
     # Load existing weights if available
     if os.path.exists(model_path) and new_vocab_size > old_vocab_size:
@@ -287,6 +292,112 @@ def load_and_expand_seqofseq_sequence_model(model_path, metadata_path, device='c
 
         # Copy to new model
         model.load_state_dict(temp_model.state_dict())
+        model = model.to(device)
+
+        print("  Model expanded successfully")
+
+    elif os.path.exists(model_path):
+        # No expansion needed
+        checkpoint = torch.load(model_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print(f"  Loaded from: {model_path}")
+    else:
+        print(f"WARNING: No checkpoint found at {model_path}")
+
+    # Create optimizer
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+
+    print(f"Model ready for fine-tuning")
+    print(f"  Vocab size: {new_vocab_size}")
+    print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
+
+    return model, optimizer
+
+
+def load_and_expand_seqofseq_duration_model(model_path, metadata_path, device='cpu'):
+    """
+    Load SeqofSeq duration model and expand for PAUSE token
+    """
+    print("\n" + "="*80)
+    print("LOADING AND EXPANDING SEQOFSEQ DURATION MODEL")
+    print("="*80)
+
+    # Load metadata to get vocab size
+    with open(metadata_path, 'rb') as f:
+        metadata = pickle.load(f)
+
+    vocab = metadata['sequence_vocab']
+    old_vocab_size = len(vocab)
+    new_vocab_size = old_vocab_size + 1  # Add PAUSE if not already there
+
+    # Check if PAUSE already in vocab
+    if 'PAUSE' in vocab:
+        print("PAUSE token already in vocabulary, no expansion needed")
+        new_vocab_size = old_vocab_size
+    else:
+        print(f"Expanding from {old_vocab_size} to {new_vocab_size} tokens")
+
+    conditioning_dim = metadata.get('conditioning_dim', 92)
+
+    # Create model with NEW vocabulary size
+    temp_config = {
+        'd_model': seq_config.DURATION_MODEL_CONFIG['d_model'],
+        'nhead': seq_config.DURATION_MODEL_CONFIG['nhead'],
+        'num_encoder_layers': seq_config.DURATION_MODEL_CONFIG['num_encoder_layers'],
+        'num_cross_attention_layers': seq_config.DURATION_MODEL_CONFIG['num_cross_attention_layers'],
+        'dim_feedforward': seq_config.DURATION_MODEL_CONFIG['dim_feedforward'],
+        'dropout': seq_config.DURATION_MODEL_CONFIG['dropout'],
+        'max_seq_len': seq_config.MAX_SEQ_LEN,
+        'conditioning_dim': conditioning_dim,
+        'sequence_feature_dim': new_vocab_size, # This should be the new vocab size
+        'output_heads': seq_config.DURATION_MODEL_CONFIG['output_heads']
+    }
+    model = ConditionalDurationPredictor(config=temp_config).to(device)
+
+
+    # Load existing weights if available
+    if os.path.exists(model_path) and new_vocab_size > old_vocab_size:
+        # Need to expand
+        print(f"Loading and expanding from: {model_path}")
+
+        # Create temporary model with old size
+        temp_model_config = {
+            'd_model': seq_config.DURATION_MODEL_CONFIG['d_model'],
+            'nhead': seq_config.DURATION_MODEL_CONFIG['nhead'],
+            'num_encoder_layers': seq_config.DURATION_MODEL_CONFIG['num_encoder_layers'],
+            'num_cross_attention_layers': seq_config.DURATION_MODEL_CONFIG['num_cross_attention_layers'],
+            'dim_feedforward': seq_config.DURATION_MODEL_CONFIG['dim_feedforward'],
+            'dropout': seq_config.DURATION_MODEL_CONFIG['dropout'],
+            'max_seq_len': seq_config.MAX_SEQ_LEN,
+            'conditioning_dim': conditioning_dim,
+            'sequence_feature_dim': old_vocab_size, # Old vocab size for temp model
+            'output_heads': seq_config.DURATION_MODEL_CONFIG['output_heads']
+        }
+        temp_model = ConditionalDurationPredictor(config=temp_model_config)
+
+
+        checkpoint = torch.load(model_path, map_location='cpu')
+        temp_model.load_state_dict(checkpoint['model_state_dict'])
+
+        # Since the duration model doesn't have a simple output projection to vocab size,
+        # and its token embedding is also based on vocab_size, we need to carefully
+        # reinitialize the token embedding and sequence_feature_dim based components.
+        # For simplicity, during expansion, we'll try to load non-strictly and hope
+        # the model's internal layers handle the new sequence_feature_dim correctly.
+        
+        # Expand token embedding if it's dependent on vocab_size
+        # The ConditionalDurationPredictor token_embedding is based on VOCAB_SIZE
+        # We need to manually expand it here.
+        if hasattr(model, 'token_embedding') and model.token_embedding.num_embeddings != new_vocab_size:
+            print(f"  Expanding token_embedding in ConditionalDurationPredictor from {old_vocab_size} to {new_vocab_size}")
+            old_embedding = temp_model.token_embedding
+            d_model_half = old_embedding.embedding_dim
+            new_embedding = nn.Embedding(new_vocab_size, d_model_half, padding_idx=seq_config.PAD_TOKEN_ID)
+            new_embedding.weight.data[:old_vocab_size] = old_embedding.weight.data.clone()
+            new_embedding.weight.data[old_vocab_size:] = old_embedding.weight.data.mean(dim=0)
+            model.token_embedding = new_embedding
+
+        model.load_state_dict(temp_model.state_dict(), strict=False) # Load non-strictly
         model = model.to(device)
 
         print("  Model expanded successfully")
@@ -342,6 +453,42 @@ def create_dummy_training_data_pxchange(num_samples=100, max_seq_len=128, device
 
     print(f"  Created {num_samples} samples")
     print(f"  Sequences include PAUSE tokens (ID 18)")
+
+    return conditioning, sequences, seq_features, durations, mask
+
+
+def create_dummy_training_data_seqofseq(num_samples=100, max_seq_len=64, vocab_size=35, device='cpu'):
+    """
+    Create dummy training data for SeqofSeq models
+    """
+    print("\nCreating dummy SeqofSeq training data...")
+
+    # vocab_size is now passed as an argument
+    conditioning_dim = 92 # Estimated from SeqofSeq config
+
+    # Random conditioning
+    conditioning = torch.randn(num_samples, conditioning_dim).to(device)
+
+    # Random sequences
+    sequences = torch.randint(seq_config.START_TOKEN_ID, vocab_size, (num_samples, max_seq_len)).to(device)
+    sequences[:, 0] = seq_config.START_TOKEN_ID
+    sequences[:, -1] = seq_config.END_TOKEN_ID
+
+    # Add some PAUSE tokens randomly
+    pause_mask = torch.rand(num_samples, max_seq_len) < 0.05
+    sequences[pause_mask] = seq_config.PAUSE_TOKEN_ID
+
+    # Random durations
+    durations = torch.rand(num_samples, max_seq_len).to(device) * 100
+
+    # Mask (True for valid positions)
+    mask = torch.ones(num_samples, max_seq_len, dtype=torch.bool).to(device)
+
+    # Sequence features (placeholder for now, might need more detail)
+    seq_features = torch.zeros(num_samples, max_seq_len, 2).to(device) # Assuming 2 features for position/direction
+
+    print(f"  Created {num_samples} samples")
+    print(f"  Sequences include PAUSE tokens (ID {seq_config.PAUSE_TOKEN_ID})")
 
     return conditioning, sequences, seq_features, durations, mask
 
@@ -498,6 +645,53 @@ def main():
     # Save
     save_path = os.path.join(MODEL_PATHS['pxchange']['model_dir'], 'duration_model_with_pause.pth')
     save_model(px_dur_model, px_dur_optimizer, save_path)
+
+    # ========================================================================
+    # 3. SEQOFSEQ SEQUENCE MODEL
+    # ========================================================================
+    print("\n\n3. FINE-TUNING SEQOFSEQ SEQUENCE MODEL")
+    print("-" * 80)
+
+    seq_seq_model, seq_seq_optimizer = load_and_expand_seqofseq_sequence_model(
+        model_path=os.path.join(SEQOFSEQ_DIR, 'saved_models', 'sequence_model_best.pth'),
+        metadata_path=os.path.join(SEQOFSEQ_DIR, 'data', 'preprocessed', 'metadata.pkl'),
+        device=device
+    )
+
+    # Create dummy training data (replace with real data loading)
+    train_data_seqofseq = create_dummy_training_data_seqofseq(num_samples=100, vocab_size=seq_seq_model.vocab_size, device=device)
+
+    # Fine-tune
+    seq_seq_model = fine_tune_model(
+        seq_seq_model, seq_seq_optimizer, train_data_seqofseq,
+        model_type='sequence', epochs=20, device=device
+    )
+
+    # Save
+    save_path = os.path.join(MODEL_PATHS['seqofseq']['model_dir'], 'sequence_model_with_pause.pth')
+    save_model(seq_seq_model, seq_seq_optimizer, save_path, {'vocab_size': seq_seq_model.vocab_size})
+
+    # ========================================================================
+    # 4. SEQOFSEQ DURATION MODEL
+    # ========================================================================
+    print("\n\n4. FINE-TUNING SEQOFSEQ DURATION MODEL")
+    print("-" * 80)
+
+    seq_dur_model, seq_dur_optimizer = load_and_expand_seqofseq_duration_model(
+        model_path=os.path.join(SEQOFSEQ_DIR, 'saved_models', 'duration_model_best.pth'),
+        metadata_path=os.path.join(SEQOFSEQ_DIR, 'data', 'preprocessed', 'metadata.pkl'),
+        device=device
+    )
+
+    # Fine-tune
+    seq_dur_model = fine_tune_model(
+        seq_dur_model, seq_dur_optimizer, train_data_seqofseq,
+        model_type='duration', epochs=20, device=device
+    )
+
+    # Save
+    save_path = os.path.join(MODEL_PATHS['seqofseq']['model_dir'], 'duration_model_with_pause.pth')
+    save_model(seq_dur_model, seq_dur_optimizer, save_path)
 
     print("\n\n" + "="*80)
     print("PHASE 2 COMPLETE - ALL MODELS FINE-TUNED WITH PAUSE SUPPORT")

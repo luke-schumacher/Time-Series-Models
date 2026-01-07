@@ -33,11 +33,27 @@ for directory in [DATA_DIR, OUTPUT_DIR, MODEL_SAVE_DIR, TEMPORAL_DATA_DIR,
     os.makedirs(directory, exist_ok=True)
 
 # ============================================================================
-# PAUSE TOKEN CONFIGURATION
+# PAUSE HANDLING CONFIGURATION (Updated for Pseudo-Patient Architecture)
 # ============================================================================
-PAUSE_DETECTION_THRESHOLD_MINUTES = 5  # Gap to trigger PAUSE insertion
+# Sequence segmentation replaces pause token injection
+# Pauses are now represented as pseudo-patient entities (separate training examples)
+
+PAUSE_DETECTION_THRESHOLD_MINUTES = 5  # Gap to trigger sequence segmentation
 PAUSE_DURATION_MIN_SECONDS = 60       # Minimum pause duration
-PAUSE_DURATION_MAX_SECONDS = 600      # Maximum pause duration
+PAUSE_DURATION_MAX_SECONDS = 600      # Maximum pause duration (for capping)
+
+# Pseudo-patient entity types
+# These represent different machine idle states
+ENTITY_TYPES = {
+    'REAL_PATIENT': 0,              # Actual patient examination/exchange sequence
+    'PSEUDO_PATIENT_PAUSE': 1,      # Inter-session pause (gap between patients)
+    'PSEUDO_PATIENT_START': 2,      # Start-of-day idle state (future use)
+    'PSEUDO_PATIENT_END': 3         # End-of-day idle state (future use)
+}
+
+# Special encoding for anatomical features when machine is idle
+# Used for BodyPart, BodyGroup when entity_type is PSEUDO_PATIENT_*
+IDLE_STATE_ENCODING = -1
 
 # ============================================================================
 # TEMPORAL MODEL CONFIGURATION
@@ -219,11 +235,13 @@ MODEL_PATHS = {
         'config': os.path.join(MODEL_SAVE_DIR, 'temporal_schedule_model', 'config.pkl')
     },
     'pxchange': {
+        'model_dir': os.path.join(MODEL_SAVE_DIR, 'pxchange_models'), # Directory for saving fine-tuned PXChange models
         'sequence': os.path.join(MODEL_SAVE_DIR, 'pxchange_models', 'sequence_model_best.pth'),
         'duration': os.path.join(MODEL_SAVE_DIR, 'pxchange_models', 'duration_model_best.pth'),
         'metadata': os.path.join(PXCHANGE_DIR, 'data', 'preprocessed', 'metadata.pkl')
     },
     'seqofseq': {
+        'model_dir': os.path.join(MODEL_SAVE_DIR, 'seqofseq_models'), # Directory for saving fine-tuned SeqofSeq models
         'sequence': os.path.join(MODEL_SAVE_DIR, 'seqofseq_models', 'sequence_model_best.pth'),
         'duration': os.path.join(MODEL_SAVE_DIR, 'seqofseq_models', 'duration_model_best.pth'),
         'metadata': os.path.join(SEQOFSEQ_DIR, 'data', 'preprocessed', 'metadata.pkl')

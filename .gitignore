@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Model checkpoints and weights (typically > 100MB)
+*.pth
+*.pt
+*.ckpt
+*.h5
+*.hdf5
+*.pb
+*.onnx
+saved_models/
+checkpoints/
+model_weights/
+
+# Preprocessed data (can be large)
+*/data/preprocessed/
+*/data/preprocessed_segmented/
+*/data/preprocessed_with_pauses/
+*/data/temporal_training_data/
+*.pkl
+*.pickle
+*.npy
+*.npz
+
+# Raw data
+*/data/raw/
+*/data/*.csv
+*.csv.gz
+
+# Generated outputs
+*/outputs/
+*/generated_schedules/
+*/event_timelines/
+*/patient_sessions/
+*/visualizations/
+
+# Logs
+*.log
+logs/
+*.out
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Large data files (over 100MB threshold)
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+
+# Backup files
+*.bak
+*.backup

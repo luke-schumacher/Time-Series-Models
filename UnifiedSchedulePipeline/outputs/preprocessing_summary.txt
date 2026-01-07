@@ -1,10 +1,11 @@
-DATA PREPROCESSING SUMMARY
+DATA PREPROCESSING SUMMARY (Pseudo-Patient Architecture)
 ================================================================================
 
-Date: 2025-12-05 11:11:33
+Date: 2025-12-16 14:04:54
 Pause threshold: 5 minutes
+Architecture: Pseudo-Patient (Sequence Segmentation)
 
-PXChange: 40 files, 141,201 events, -25,338 pauses
-SeqofSeq: 1 files, 4,527 scans, 374 pauses
+PXChange: 17 files, 2413 segments (2218 real, 195 pseudo)
+SeqofSeq: 2 files, 1339 segments (930 real, 409 pseudo)
 
-Total: 145,728 data points, -24,964 pauses (-17.13%)
+Total: 3752 segments, 604 pseudo-patient (16.10%)
