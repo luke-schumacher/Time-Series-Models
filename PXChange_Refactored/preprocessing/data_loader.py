@@ -9,13 +9,20 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+pxchange_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, pxchange_dir)
 
-from config import (
-    DATA_DIR, CONDITIONING_FEATURES, SEQUENCE_FEATURE_COLUMNS,
-    MAX_SEQ_LEN, PAD_TOKEN_ID, START_TOKEN_ID, END_TOKEN_ID,
-    IDLE_TOKEN_ID, IDLE_STATE_ENCODING, RANDOM_SEED
-)
+import PXChange_Refactored.config as px_config
+DATA_DIR = px_config.DATA_DIR
+CONDITIONING_FEATURES = px_config.CONDITIONING_FEATURES
+SEQUENCE_FEATURE_COLUMNS = px_config.SEQUENCE_FEATURE_COLUMNS
+MAX_SEQ_LEN = px_config.MAX_SEQ_LEN
+PAD_TOKEN_ID = px_config.PAD_TOKEN_ID
+START_TOKEN_ID = px_config.START_TOKEN_ID
+END_TOKEN_ID = px_config.END_TOKEN_ID
+IDLE_TOKEN_ID = px_config.IDLE_TOKEN_ID
+IDLE_STATE_ENCODING = px_config.IDLE_STATE_ENCODING
+RANDOM_SEED = px_config.RANDOM_SEED
 
 
 class MRISequenceDataset(Dataset):

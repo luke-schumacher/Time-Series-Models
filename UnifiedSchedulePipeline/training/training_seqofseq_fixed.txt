@@ -1,0 +1,119 @@
+Traceback (most recent call last):
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_all_models.py", line 110, in train_model
+    from train_seqofseq_sequence import train_seqofseq_sequence_model
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_seqofseq_sequence.py", line 24, in <module>
+    from data_loaders.seqofseq_data_loader import create_seqofseq_dataloaders
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\__init__.py", line 6, in <module>
+    from .seqofseq_data_loader import create_seqofseq_dataloaders, load_all_seqofseq_segments
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\seqofseq_data_loader.py", line 23, in <module>
+    from .seqofseq_dataset import SeqofSeqDataset
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\seqofseq_dataset.py", line 15, in <module>
+    from config import MAX_SEQ_LEN, PAD_TOKEN_ID
+ImportError: cannot import name 'MAX_SEQ_LEN' from 'config' (C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\..\config.py)
+Traceback (most recent call last):
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_all_models.py", line 114, in train_model
+    from train_seqofseq_duration import train_seqofseq_duration_model
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_seqofseq_duration.py", line 25, in <module>
+    from data_loaders.seqofseq_data_loader import create_seqofseq_dataloaders
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\__init__.py", line 6, in <module>
+    from .seqofseq_data_loader import create_seqofseq_dataloaders, load_all_seqofseq_segments
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\seqofseq_data_loader.py", line 23, in <module>
+    from .seqofseq_dataset import SeqofSeqDataset
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\seqofseq_dataset.py", line 15, in <module>
+    from config import MAX_SEQ_LEN, PAD_TOKEN_ID
+ImportError: cannot import name 'MAX_SEQ_LEN' from 'config' (C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\..\config.py)
+
+======================================================================
+UNIFIED SCHEDULE PIPELINE - TRAINING ORCHESTRATOR
+======================================================================
+  Started: 2026-01-10 09:57:47
+  Force retrain: False
+  Parallel: False
+======================================================================
+
+
+======================================================================
+MODEL TRAINING STATUS
+======================================================================
+  pxchange_sequence        : [TRAINED]
+  pxchange_duration        : [TRAINED]
+  seqofseq_sequence        : [NOT TRAINED]
+  seqofseq_duration        : [NOT TRAINED]
+  temporal                 : [TRAINED]
+
+  Overall Progress: 3/5 models trained (60%)
+======================================================================
+
+
+[INFO] Running sequential training
+[INFO] Models to train: temporal, pxchange_sequence, pxchange_duration, seqofseq_sequence, seqofseq_duration
+
+======================================================================
+TRAINING: TEMPORAL
+======================================================================
+
+[SKIPPED] Model already trained. Use --force to retrain.
+======================================================================
+
+======================================================================
+TRAINING: PXCHANGE_SEQUENCE
+======================================================================
+
+[SKIPPED] Model already trained. Use --force to retrain.
+======================================================================
+
+======================================================================
+TRAINING: PXCHANGE_DURATION
+======================================================================
+
+[SKIPPED] Model already trained. Use --force to retrain.
+======================================================================
+
+======================================================================
+TRAINING: SEQOFSEQ_SEQUENCE
+======================================================================
+
+[ERROR] Training failed after 0.05 minutes: cannot import name 'MAX_SEQ_LEN' from 'config' (C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\..\config.py)
+======================================================================
+
+[WARNING] Training failed for seqofseq_sequence
+[WARNING] Continuing with next model...
+
+======================================================================
+TRAINING: SEQOFSEQ_DURATION
+======================================================================
+
+[ERROR] Training failed after 0.00 minutes: cannot import name 'MAX_SEQ_LEN' from 'config' (C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\..\config.py)
+======================================================================
+
+[WARNING] Training failed for seqofseq_duration
+[WARNING] Continuing with next model...
+
+======================================================================
+MODEL TRAINING STATUS
+======================================================================
+  pxchange_sequence        : [TRAINED]
+  pxchange_duration        : [TRAINED]
+  seqofseq_sequence        : [NOT TRAINED]
+  seqofseq_duration        : [NOT TRAINED]
+  temporal                 : [TRAINED]
+
+  Overall Progress: 3/5 models trained (60%)
+======================================================================
+
+
+======================================================================
+TRAINING SUMMARY
+======================================================================
+  Total time: 0.05 minutes (0.00 hours)
+
+  Results:
+    temporal                 : [SUCCESS]
+    pxchange_sequence        : [SUCCESS]
+    pxchange_duration        : [SUCCESS]
+    seqofseq_sequence        : [FAILED]
+    seqofseq_duration        : [FAILED]
+
+  Success rate: 3/5 (60%)
+======================================================================
+

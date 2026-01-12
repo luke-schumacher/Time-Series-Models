@@ -2,7 +2,7 @@
 SeqofSeq Data Loader for UnifiedSchedulePipeline
 
 Loads all segmented SeqofSeq files and creates training/validation dataloaders.
-Reuses MRISequenceDataset from SeqofSeq_Pipeline.
+Uses SeqofSeqDataset which handles one-hot encoded conditioning features.
 Handles metadata generation if not available.
 """
 
@@ -19,8 +19,8 @@ from sklearn.preprocessing import LabelEncoder
 seqofseq_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'SeqofSeq_Pipeline')
 sys.path.insert(0, seqofseq_dir)
 
-from preprocessing.data_loader import MRISequenceDataset
 from config import RANDOM_SEED
+from .seqofseq_dataset import SeqofSeqDataset
 
 
 def load_all_seqofseq_segments(segmented_data_dir=None):
@@ -59,6 +59,14 @@ def load_all_seqofseq_segments(segmented_data_dir=None):
             df = pd.read_csv(file_path)
             file_id = os.path.basename(file_path).replace('_segmented.csv', '')
             df['file_id'] = file_id
+
+            # Create sequence_idx from original_sequence_id and segment_index
+            if 'original_sequence_id' in df.columns and 'segment_index' in df.columns:
+                df['sequence_idx'] = df['original_sequence_id'].astype(str) + '_' + df['segment_index'].astype(str)
+            else:
+                # Fallback: use segment_index or create a simple index
+                df['sequence_idx'] = df.get('segment_index', range(len(df)))
+
             dfs.append(df)
             print(f"  [OK] Loaded {file_id}: {len(df['sequence_idx'].unique())} sequences")
         except Exception as e:
@@ -72,6 +80,34 @@ def load_all_seqofseq_segments(segmented_data_dir=None):
 
     # Renumber sequence indices to avoid conflicts across files
     combined_df['sequence_idx'] = combined_df.groupby(['file_id', 'sequence_idx']).ngroup()
+
+    # Create SeqOrder column (needed by SeqofSeqDataset)
+    combined_df['SeqOrder'] = (
+        combined_df['file_id'].astype(str) + '_' +
+        combined_df['sequence_idx'].astype(str)
+    )
+
+    # Create Step column for sequence ordering (needed by SeqofSeqDataset)
+    combined_df['Step'] = combined_df.groupby('SeqOrder').cumcount()
+
+    # Rename columns to match SeqofSeqDataset expectations
+    if 'Sequence' in combined_df.columns:
+        combined_df['sourceID'] = combined_df['Sequence']
+        # Note: sourceID will be encoded later after metadata is loaded
+
+    # Add missing columns that PXChange has but SeqofSeq doesn't
+    if 'Position_encoded' not in combined_df.columns:
+        combined_df['Position_encoded'] = 0  # Default value
+    if 'Direction_encoded' not in combined_df.columns:
+        combined_df['Direction_encoded'] = 0  # Default value
+
+    # Handle duration columns
+    if 'duration' in combined_df.columns:
+        # SeqofSeq 'duration' is the actual step duration
+        combined_df['step_duration'] = combined_df['duration']
+        # For timediff, calculate cumulative time within each sequence
+        if 'timediff' not in combined_df.columns:
+            combined_df['timediff'] = combined_df.groupby('sequence_idx')['duration'].cumsum()
 
     # Statistics
     num_sequences = len(combined_df['sequence_idx'].unique())
@@ -185,29 +221,42 @@ def create_seqofseq_dataloaders(batch_size=32, validation_split=0.2,
     # Load or generate metadata
     metadata = load_or_generate_metadata(metadata_path, combined_df)
 
+    # Update metadata to reflect actual conditioning features used (excluding coil columns)
+    # We use only the 5 core CONDITIONING_FEATURES for simplicity
+    metadata['num_conditioning_features'] = 5
+
+    # Encode sourceID using vocabulary from metadata
+    vocab = metadata.get('sequence_vocab', metadata.get('vocab', {}))
+    def encode_sourceid(s):
+        if pd.isna(s) or s == '':
+            return vocab.get('PAD', 0)
+        return vocab.get(str(s), vocab.get('UNK', vocab.get('<UNK>', len(vocab)-1)))
+
+    combined_df['sourceID'] = combined_df['sourceID'].apply(encode_sourceid)
+    print(f"  Encoded sourceID using vocabulary (vocab size: {len(vocab)})")
+
     # Split sequences into train/val
     from sklearn.model_selection import train_test_split
-    sequence_indices = combined_df['sequence_idx'].unique()
+    seq_orders = combined_df['SeqOrder'].unique()
     train_seqs, val_seqs = train_test_split(
-        sequence_indices,
+        seq_orders,
         test_size=validation_split,
         random_state=RANDOM_SEED
     )
 
-    train_df = combined_df[combined_df['sequence_idx'].isin(train_seqs)]
-    val_df = combined_df[combined_df['sequence_idx'].isin(val_seqs)]
+    train_df = combined_df[combined_df['SeqOrder'].isin(train_seqs)]
+    val_df = combined_df[combined_df['SeqOrder'].isin(val_seqs)]
 
     print(f"\n[SeqofSeq Loader] Train/Val split:")
     print(f"  Training sequences: {len(train_seqs)} ({len(train_df)} scans)")
     print(f"  Validation sequences: {len(val_seqs)} ({len(val_df)} scans)")
 
-    # Create datasets using existing MRISequenceDataset
-    coil_cols = metadata.get('coil_cols', [])
-    train_dataset = MRISequenceDataset(train_df, fit_scaler=True, coil_cols=coil_cols)
-    val_dataset = MRISequenceDataset(
+    # Create datasets using SeqofSeq-specific dataset
+    train_dataset = SeqofSeqDataset(train_df, metadata, fit_scaler=True)
+    val_dataset = SeqofSeqDataset(
         val_df,
-        conditioning_scaler=train_dataset.conditioning_scaler,
-        coil_cols=coil_cols
+        metadata,
+        conditioning_scaler=train_dataset.conditioning_scaler
     )
 
     # Create dataloaders
@@ -230,7 +279,7 @@ def create_seqofseq_dataloaders(batch_size=32, validation_split=0.2,
     # Update metadata with split info
     metadata.update({
         'num_files': num_files,
-        'num_sequences': len(sequence_indices),
+        'num_sequences': len(seq_orders),
         'num_train_sequences': len(train_seqs),
         'num_val_sequences': len(val_seqs),
         'num_train_scans': len(train_df),

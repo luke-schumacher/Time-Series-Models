@@ -19,7 +19,7 @@ pxchange_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'PXChan
 sys.path.insert(0, pxchange_dir)
 
 from preprocessing.data_loader import MRISequenceDataset
-from config import RANDOM_SEED, SOURCEID_VOCAB, PSEUDO_PATIENT_TOKENS
+from PXChange_Refactored.config import RANDOM_SEED, SOURCEID_VOCAB, PSEUDO_PATIENT_TOKENS
 
 
 def load_all_pxchange_segments(segmented_data_dir=None):

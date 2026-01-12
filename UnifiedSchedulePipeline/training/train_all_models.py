@@ -18,10 +18,11 @@ import time
 from datetime import datetime
 
 # Add paths
-unified_dir = os.path.join(os.path.dirname(__file__), '..', '..')
+unified_dir = os.path.join(os.path.dirname(__file__), '..')
 sys.path.insert(0, unified_dir)
 
-from config import MODEL_PATHS
+import config
+MODEL_PATHS = config.MODEL_PATHS
 
 
 def check_training_status():
@@ -62,7 +63,7 @@ def print_training_status(status):
     print("=" * 70)
 
     for model_name, is_trained in status.items():
-        status_str = "✓ TRAINED" if is_trained else "✗ NOT TRAINED"
+        status_str = "[TRAINED]" if is_trained else "[NOT TRAINED]"
         print(f"  {model_name:25s}: {status_str}")
 
     num_trained = sum(status.values())
@@ -189,7 +190,7 @@ def train_all_models(models=None, force_retrain=False, parallel=False):
         print(f"  Total time: {overall_elapsed/60:.2f} minutes ({overall_elapsed/3600:.2f} hours)")
         print(f"\n  Results:")
         for model_name, success in results.items():
-            status_str = "✓ SUCCESS" if success else "✗ FAILED"
+            status_str = "[SUCCESS]" if success else "[FAILED]"
             print(f"    {model_name:25s}: {status_str}")
 
         num_success = sum(results.values())

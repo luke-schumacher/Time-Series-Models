@@ -57,13 +57,14 @@ def train_epoch(model, train_loader, optimizer, device, epoch):
     for batch in pbar:
         conditioning = batch['conditioning'].to(device)
         sequence_tokens = batch['sequence_tokens'].to(device)
-        durations = batch['durations'].to(device)
+        sequence_features = batch['sequence_features'].to(device)
+        step_durations = batch['step_durations'].to(device)
         mask = batch['mask'].to(device)
 
         optimizer.zero_grad()
-        mu, sigma = model(conditioning, sequence_tokens)
+        mu, sigma = model(conditioning, sequence_tokens, sequence_features)
 
-        loss = gamma_nll_loss(mu, sigma, durations, mask)
+        loss = gamma_nll_loss(mu, sigma, step_durations, mask)
 
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
@@ -90,11 +91,12 @@ def validate(model, val_loader, device, epoch):
         for batch in pbar:
             conditioning = batch['conditioning'].to(device)
             sequence_tokens = batch['sequence_tokens'].to(device)
-            durations = batch['durations'].to(device)
+            sequence_features = batch['sequence_features'].to(device)
+            step_durations = batch['step_durations'].to(device)
             mask = batch['mask'].to(device)
 
-            mu, sigma = model(conditioning, sequence_tokens)
-            loss = gamma_nll_loss(mu, sigma, durations, mask)
+            mu, sigma = model(conditioning, sequence_tokens, sequence_features)
+            loss = gamma_nll_loss(mu, sigma, step_durations, mask)
 
             num_valid = mask.sum().item()
             total_loss += loss.item() * num_valid
