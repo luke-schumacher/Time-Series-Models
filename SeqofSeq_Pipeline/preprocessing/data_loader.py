@@ -11,13 +11,18 @@ from sklearn.model_selection import train_test_split
 import pickle
 
 import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+seqofseq_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, seqofseq_dir)
 
-from SeqofSeq_Pipeline.config import (
-    CONDITIONING_FEATURES, MAX_SEQ_LEN,
-    PAD_TOKEN_ID, START_TOKEN_ID, END_TOKEN_ID, IDLE_TOKEN_ID,
-    SPECIAL_TOKENS, IDLE_STATE_ENCODING
-)
+import SeqofSeq_Pipeline.config as seq_config
+CONDITIONING_FEATURES = seq_config.CONDITIONING_FEATURES
+MAX_SEQ_LEN = seq_config.MAX_SEQ_LEN
+PAD_TOKEN_ID = seq_config.PAD_TOKEN_ID
+START_TOKEN_ID = seq_config.START_TOKEN_ID
+END_TOKEN_ID = seq_config.END_TOKEN_ID
+IDLE_TOKEN_ID = seq_config.IDLE_TOKEN_ID
+SPECIAL_TOKENS = seq_config.SPECIAL_TOKENS
+IDLE_STATE_ENCODING = seq_config.IDLE_STATE_ENCODING
 
 
 class MRISequenceDataset(Dataset):

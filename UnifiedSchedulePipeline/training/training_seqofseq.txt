@@ -1,0 +1,225 @@
+C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\optim\lr_scheduler.py:62: UserWarning: The verbose parameter is deprecated. Please use get_last_lr() to access the learning rate.
+  warnings.warn(
+
+======================================================================
+UNIFIED SCHEDULE PIPELINE - TRAINING ORCHESTRATOR
+======================================================================
+  Started: 2026-01-09 21:55:36
+  Force retrain: False
+  Parallel: False
+======================================================================
+
+
+======================================================================
+MODEL TRAINING STATUS
+======================================================================
+  pxchange_sequence        : [TRAINED]
+  pxchange_duration        : [TRAINED]
+  seqofseq_sequence        : [NOT TRAINED]
+  seqofseq_duration        : [NOT TRAINED]
+  temporal                 : [TRAINED]
+
+  Overall Progress: 3/5 models trained (60%)
+======================================================================
+
+
+[INFO] Running sequential training
+[INFO] Models to train: temporal, pxchange_sequence, pxchange_duration, seqofseq_sequence, seqofseq_duration
+
+======================================================================
+TRAINING: TEMPORAL
+======================================================================
+
+[SKIPPED] Model already trained. Use --force to retrain.
+======================================================================
+
+======================================================================
+TRAINING: PXCHANGE_SEQUENCE
+======================================================================
+
+[SKIPPED] Model already trained. Use --force to retrain.
+======================================================================
+
+======================================================================
+TRAINING: PXCHANGE_DURATION
+======================================================================
+
+[SKIPPED] Model already trained. Use --force to retrain.
+======================================================================
+
+======================================================================
+TRAINING: SEQOFSEQ_SEQUENCE
+======================================================================
+Using device: cpu
+======================================================================
+TRAINING SEQOFSEQ SEQUENCE MODEL
+======================================================================
+
+[1/5] Loading data...
+[SeqofSeq Loader] Found 2 segmented files
+  [OK] Loaded 175832: 229 sequences
+  [OK] Loaded 176625: 1110 sequences
+
+[SeqofSeq Loader] Combined statistics:
+  Total files: 2
+  Total sequences: 1339
+    - Real patient sequences: 930
+    - Pseudo-patient sequences: 409
+    - Pseudo-patient ratio: 30.5%
+  Total scans: 5766
+[SeqofSeq Loader] Loading metadata from C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\..\..\..\SeqofSeq_Pipeline\data\preprocessed\metadata.pkl...
+  [OK] Loaded metadata: vocab_size=34, conditioning_dim=92
+  Encoded sourceID using vocabulary (vocab size: 34)
+
+[SeqofSeq Loader] Train/Val split:
+  Training sequences: 1071 (4674 scans)
+  Validation sequences: 268 (1092 scans)
+
+[SeqofSeq Loader] Dataloaders created:
+  Training: 1071 sequences (34 batches)
+  Validation: 268 sequences (9 batches)
+  Batch size: 32
+
+  Vocabulary size: 34
+  Conditioning dimension: 92
+  Training batches: 34
+  Validation batches: 9
+
+[2/5] Creating model...
+  Model parameters: 11,166,754
+
+[3/5] Setting up training...
+
+[4/5] Training...
+Epoch 1 [Train]:   0%|          | 0/34 [00:00<?, ?it/s]Epoch 1 [Train]:   0%|          | 0/34 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_all_models.py", line 111, in train_model
+    model, train_losses, val_losses = train_seqofseq_sequence_model()
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_seqofseq_sequence.py", line 188, in train_seqofseq_sequence_model
+    train_loss = train_epoch(model, train_loader, criterion, optimizer, device, epoch)
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_seqofseq_sequence.py", line 50, in train_epoch
+    logits = model(conditioning, input_seq)  # [batch, seq_len-1, vocab_size]
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\..\..\SeqofSeq_Pipeline\models\conditional_sequence_generator.py", line 135, in forward
+    memory = self.encode_conditioning(conditioning)  # [batch_size, 1, d_model]
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\..\..\SeqofSeq_Pipeline\models\conditional_sequence_generator.py", line 110, in encode_conditioning
+    cond_proj = self.conditioning_projection(conditioning)  # [batch_size, d_model]
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\..\..\..\SeqofSeq_Pipeline\models\layers.py", line 67, in forward
+    return self.projection(conditioning)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\container.py", line 250, in forward
+    input = module(input)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\nn\modules\linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (32x7 and 92x256)
+C:\Users\lukis\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\site-packages\torch\optim\lr_scheduler.py:62: UserWarning: The verbose parameter is deprecated. Please use get_last_lr() to access the learning rate.
+  warnings.warn(
+
+[ERROR] Training failed after 0.11 minutes: mat1 and mat2 shapes cannot be multiplied (32x7 and 92x256)
+======================================================================
+
+[WARNING] Training failed for seqofseq_sequence
+[WARNING] Continuing with next model...
+
+======================================================================
+TRAINING: SEQOFSEQ_DURATION
+======================================================================
+Using device: cpu
+======================================================================
+TRAINING SEQOFSEQ DURATION MODEL
+======================================================================
+
+[1/5] Loading data...
+[SeqofSeq Loader] Found 2 segmented files
+  [OK] Loaded 175832: 229 sequences
+  [OK] Loaded 176625: 1110 sequences
+
+[SeqofSeq Loader] Combined statistics:
+  Total files: 2
+  Total sequences: 1339
+    - Real patient sequences: 930
+    - Pseudo-patient sequences: 409
+    - Pseudo-patient ratio: 30.5%
+  Total scans: 5766
+[SeqofSeq Loader] Loading metadata from C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\data_loaders\..\..\..\SeqofSeq_Pipeline\data\preprocessed\metadata.pkl...
+  [OK] Loaded metadata: vocab_size=34, conditioning_dim=92
+  Encoded sourceID using vocabulary (vocab size: 34)
+
+[SeqofSeq Loader] Train/Val split:
+  Training sequences: 1071 (4674 scans)
+  Validation sequences: 268 (1092 scans)
+
+[SeqofSeq Loader] Dataloaders created:
+  Training: 1071 sequences (34 batches)
+  Validation: 268 sequences (9 batches)
+  Batch size: 32
+
+  Vocabulary size: 34
+  Conditioning dimension: 92
+  Training batches: 34
+  Validation batches: 9
+
+[2/5] Creating model...
+  Model parameters: 12,797,314
+
+[3/5] Setting up training...
+
+[4/5] Training...
+Epoch 1 [Train]:   0%|          | 0/34 [00:00<?, ?it/s]Epoch 1 [Train]:   0%|          | 0/34 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_all_models.py", line 115, in train_model
+    model, train_losses, val_losses = train_seqofseq_duration_model()
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_seqofseq_duration.py", line 183, in train_seqofseq_duration_model
+    train_loss = train_epoch(model, train_loader, optimizer, device, epoch)
+  File "C:\Users\lukis\Documents\GitHub\Time-Series-Models\UnifiedSchedulePipeline\training\train_seqofseq_duration.py", line 60, in train_epoch
+    durations = batch['durations'].to(device)
+KeyError: 'durations'
+
+[ERROR] Training failed after 0.03 minutes: 'durations'
+======================================================================
+
+[WARNING] Training failed for seqofseq_duration
+[WARNING] Continuing with next model...
+
+======================================================================
+MODEL TRAINING STATUS
+======================================================================
+  pxchange_sequence        : [TRAINED]
+  pxchange_duration        : [TRAINED]
+  seqofseq_sequence        : [NOT TRAINED]
+  seqofseq_duration        : [NOT TRAINED]
+  temporal                 : [TRAINED]
+
+  Overall Progress: 3/5 models trained (60%)
+======================================================================
+
+
+======================================================================
+TRAINING SUMMARY
+======================================================================
+  Total time: 0.14 minutes (0.00 hours)
+
+  Results:
+    temporal                 : [SUCCESS]
+    pxchange_sequence        : [SUCCESS]
+    pxchange_duration        : [SUCCESS]
+    seqofseq_sequence        : [FAILED]
+    seqofseq_duration        : [FAILED]
+
+  Success rate: 3/5 (60%)
+======================================================================
+

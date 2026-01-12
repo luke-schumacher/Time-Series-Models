@@ -21,7 +21,8 @@
       "Bash(powershell -Command \"\\(Get-Content ''141049_segmented.csv'' -First 1\\).Split\\('',''\\).Count\")",
       "Bash(xargs du:*)",
       "Bash(git rm:*)",
-      "Bash(xargs git rm:*)"
+      "Bash(xargs git rm:*)",
+      "Bash(tee:*)"
     ],
     "deny": [],
     "ask": []

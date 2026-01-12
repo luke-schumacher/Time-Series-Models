@@ -212,7 +212,7 @@ def create_augmented_temporal_dataset(daily_summaries_df, augmentation_factor=50
     # Fit session count distribution (Poisson)
     session_counts = daily_summaries_df['num_sessions'].values
     lambda_poisson = np.mean(session_counts)
-    print(f"\n  Session count distribution: Poisson(λ={lambda_poisson:.2f})")
+    print(f"\n  Session count distribution: Poisson(lambda={lambda_poisson:.2f})")
 
     # Fit timing distribution (Mixture of Gaussians)
     all_start_times = []
