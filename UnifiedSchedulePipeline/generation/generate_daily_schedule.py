@@ -212,6 +212,12 @@ def generate_seqofseq_sequence(seq_model, dur_model, conditioning, scaler, devic
     return tokens_trimmed[0].cpu().numpy(), durations.cpu().numpy()
 
 
+def seconds_from_midnight(dt):
+    """Convert datetime to seconds from midnight"""
+    midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int((dt - midnight).total_seconds())
+
+
 def generate_daily_schedule(
     date_str="2026-01-10",
     machine_id=141049,
@@ -307,14 +313,27 @@ def generate_daily_schedule(
     body_parts = ['HEAD', 'CHEST', 'ABDOMEN', 'PELVIS', 'SPINE', 'EXTREMITY']
 
     for session_idx, session_start in enumerate(start_datetimes):
-        print(f"  Session {session_idx+1}/{num_sessions} - Start: {session_start.strftime('%H:%M:%S')}")
-
-        # Generate patient ID and body part for this session
-        patient_id = f"P{session_idx:03d}"
+        # Generate patient ID (starting at P001, not P000)
+        patient_id = f"P{session_idx+1:03d}"
         body_part = np.random.choice(body_parts)
 
         # Random conditioning for PXChange
         px_conditioning = np.random.randn(len(PX_FEATURES)).astype(np.float32)
+
+        # Extract patient height/weight from conditioning
+        # PXChange conditioning features: ['age', 'weight', 'height', 'BodyGroup_from', 'BodyGroup_to', 'ptab']
+        if len(PX_FEATURES) >= 3:
+            # Conditioning has: age, weight, height
+            patient_age = int(px_conditioning[0] * 15 + 50)  # Denormalize: mean 50, std 15
+            patient_weight = int(px_conditioning[1] * 15 + 75)  # Denormalize: mean 75kg, std 15
+            patient_height = int(px_conditioning[2] * 10 + 170)  # Denormalize: mean 170cm, std 10
+        else:
+            # Defaults if not available
+            patient_age = 50
+            patient_weight = 75
+            patient_height = 170
+
+        print(f"  Session {session_idx+1}/{num_sessions} - Start: {session_start.strftime('%H:%M:%S')} - Patient {patient_id} (Age: {patient_age}, Weight: {patient_weight}kg, Height: {patient_height}cm)")
 
         # Generate PXChange events
         px_tokens, px_durations = generate_pxchange_session(
@@ -332,18 +351,31 @@ def generate_daily_schedule(
 
             token_name = id_to_sourceid.get(int(token_id), f"TOKEN_{token_id}")
 
-            # Add PXChange event with enhanced columns
+            # Check if this is a PAUSE event
+            if token_name == 'PAUSE':
+                event_type = 'pause'
+                sourceID = 'PAUSE'
+                scan_sequence = 'PAUSE'
+                body_part_value = ''
+            else:
+                event_type = 'pxchange'
+                sourceID = token_name
+                scan_sequence = ''
+                body_part_value = ''
+
+            # Add event with new format matching sample eventlog
             all_events.append({
                 'event_id': event_id,
+                'timestamp': seconds_from_midnight(current_time),
+                'datetime': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                'event_type': event_type,
                 'session_id': session_idx,
                 'patient_id': patient_id,
-                'timestamp': current_time,
-                'event_type': 'pxchange',
-                'token_name': token_name,
-                'body_part': body_part,
-                'scan_type': None,  # Only for SeqofSeq events
-                'duration': float(duration),
-                'source': 'PXChange'
+                'sourceID': sourceID,
+                'scan_sequence': scan_sequence,
+                'body_part': body_part_value,
+                'duration': round(float(duration), 1),
+                'cumulative_time': seconds_from_midnight(current_time)
             })
             event_id += 1
             current_time += timedelta(seconds=float(duration))
@@ -367,17 +399,19 @@ def generate_daily_schedule(
 
                     scan_name = id_to_sequence.get(int(scan_token), f"SCAN_{scan_token}")
 
+                    # Add scan event with new format matching sample eventlog
                     all_events.append({
                         'event_id': event_id,
+                        'timestamp': seconds_from_midnight(current_time),
+                        'datetime': current_time.strftime('%Y-%m-%d %H:%M:%S'),
+                        'event_type': 'scan',
                         'session_id': session_idx,
                         'patient_id': patient_id,
-                        'timestamp': current_time,
-                        'event_type': 'scan',
-                        'token_name': scan_name,
+                        'sourceID': '',
+                        'scan_sequence': scan_name,
                         'body_part': body_part,
-                        'scan_type': scan_name,  # Detailed scan protocol name
-                        'duration': float(scan_duration),
-                        'source': 'SeqofSeq'
+                        'duration': round(float(scan_duration), 1),
+                        'cumulative_time': seconds_from_midnight(current_time)
                     })
                     event_id += 1
                     current_time += timedelta(seconds=float(scan_duration))
@@ -387,20 +421,16 @@ def generate_daily_schedule(
     # Create DataFrame
     schedule_df = pd.DataFrame(all_events)
 
-    # Sort by timestamp
-    schedule_df = schedule_df.sort_values('timestamp').reset_index(drop=True)
+    # Sort by cumulative_time (chronological order)
+    schedule_df = schedule_df.sort_values('cumulative_time').reset_index(drop=True)
 
-    # Add formatted datetime
-    schedule_df['datetime_str'] = schedule_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    # Update event_id to be sequential after sorting
+    schedule_df['event_id'] = range(len(schedule_df))
 
-    # Calculate cumulative time
-    schedule_df['time_since_start'] = (schedule_df['timestamp'] - schedule_df['timestamp'].min()).dt.total_seconds()
-
-    # Reorder columns for readability
+    # Reorder columns to match sample format EXACTLY
     column_order = [
-        'event_id', 'session_id', 'patient_id', 'timestamp', 'datetime_str',
-        'event_type', 'token_name', 'body_part', 'scan_type',
-        'duration', 'source', 'time_since_start'
+        'event_id', 'timestamp', 'datetime', 'event_type', 'session_id', 'patient_id',
+        'sourceID', 'scan_sequence', 'body_part', 'duration', 'cumulative_time'
     ]
     schedule_df = schedule_df[column_order]
 
@@ -411,7 +441,8 @@ def generate_daily_schedule(
     print(f"  Total sessions: {num_sessions}")
     print(f"  PXChange events: {len(schedule_df[schedule_df['event_type'] == 'pxchange'])}")
     print(f"  Scan events: {len(schedule_df[schedule_df['event_type'] == 'scan'])}")
-    print(f"  Total duration: {schedule_df['time_since_start'].max() / 3600:.2f} hours")
+    print(f"  Pause events: {len(schedule_df[schedule_df['event_type'] == 'pause'])}")
+    print(f"  Total duration: {schedule_df['cumulative_time'].max() / 3600:.2f} hours")
 
     # Save results
     if output_dir is None:
@@ -434,14 +465,16 @@ def print_schedule_summary(schedule_df, num_examples=5):
     # Show first few events
     print("First events:")
     for _, row in schedule_df.head(num_examples).iterrows():
-        print(f"  [{row['datetime_str']}] {row['event_type']:10s} - {row['token_name']:20s} ({row['duration']:.1f}s)")
+        event_name = row['sourceID'] if row['sourceID'] else row['scan_sequence']
+        print(f"  [{row['datetime']}] {row['event_type']:10s} - {event_name:20s} ({row['duration']:.1f}s)")
 
     print("\n  ...")
 
     # Show last few events
     print("\nLast events:")
     for _, row in schedule_df.tail(num_examples).iterrows():
-        print(f"  [{row['datetime_str']}] {row['event_type']:10s} - {row['token_name']:20s} ({row['duration']:.1f}s)")
+        event_name = row['sourceID'] if row['sourceID'] else row['scan_sequence']
+        print(f"  [{row['datetime']}] {row['event_type']:10s} - {event_name:20s} ({row['duration']:.1f}s)")
 
     # Statistics per session
     print(f"\n{'='*70}")
@@ -450,13 +483,13 @@ def print_schedule_summary(schedule_df, num_examples=5):
 
     for session_id in sorted(schedule_df['session_id'].unique()):
         session_data = schedule_df[schedule_df['session_id'] == session_id]
-        start_time = session_data['timestamp'].min()
-        end_time = session_data['timestamp'].max()
-        duration = (end_time - start_time).total_seconds()
+        start_time_str = session_data['datetime'].min()
+        end_time_str = session_data['datetime'].max()
+        duration = session_data['cumulative_time'].max() - session_data['cumulative_time'].min()
 
         print(f"Session {session_id}:")
-        print(f"  Start: {start_time.strftime('%H:%M:%S')}")
-        print(f"  End: {end_time.strftime('%H:%M:%S')}")
+        print(f"  Start: {start_time_str.split()[1]}")
+        print(f"  End: {end_time_str.split()[1]}")
         print(f"  Duration: {duration/60:.1f} minutes")
         print(f"  Events: {len(session_data)}")
         print()
