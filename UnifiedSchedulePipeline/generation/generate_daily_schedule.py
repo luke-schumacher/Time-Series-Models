@@ -53,6 +53,61 @@ SEQ_PAD_ID = 0
 SEQ_START_ID = 1
 SEQ_END_ID = 2
 
+# Body group mapping (ID to name)
+BODYGROUP_NAMES = ['HEAD', 'NECK', 'CHEST', 'ABDOMEN', 'PELVIS',
+                   'SPINE', 'ARM', 'LEG', 'HAND', 'FOOT', 'UNKNOWN']
+
+
+def load_patient_data(csv_path):
+    """
+    Load patient data from CSV file.
+
+    Expected columns:
+        - patient_id: Unique patient identifier (required)
+        - age: Patient age in years (optional, default 50)
+        - weight: Patient weight in kg (optional, default 75)
+        - height: Patient height in cm (optional, default 170)
+        - bodygroup_from: Source body region 0-10 or name (optional, default 0=HEAD)
+        - bodygroup_to: Target body region 0-10 or name (optional, default=bodygroup_from)
+        - ptab: Patient table position (optional, default 0)
+
+    Returns:
+        DataFrame with normalized patient data
+    """
+    df = pd.read_csv(csv_path)
+
+    # Ensure required column exists
+    if 'patient_id' not in df.columns:
+        raise ValueError("Patient CSV must have 'patient_id' column")
+
+    # Set defaults for missing columns
+    defaults = {
+        'age': 50,
+        'weight': 75,
+        'height': 170,
+        'bodygroup_from': 0,
+        'bodygroup_to': None,  # Will copy from bodygroup_from
+        'ptab': 0
+    }
+
+    for col, default_val in defaults.items():
+        if col not in df.columns:
+            df[col] = default_val
+
+    # Handle bodygroup_to default (same as bodygroup_from)
+    if df['bodygroup_to'].isna().all() or (df['bodygroup_to'] == None).all():
+        df['bodygroup_to'] = df['bodygroup_from']
+
+    # Convert string body groups to integers if needed
+    bodygroup_map = {name.upper(): idx for idx, name in enumerate(BODYGROUP_NAMES)}
+
+    for col in ['bodygroup_from', 'bodygroup_to']:
+        if df[col].dtype == 'object':
+            df[col] = df[col].str.upper().map(bodygroup_map).fillna(10).astype(int)
+        df[col] = df[col].fillna(0).astype(int)
+
+    return df
+
 
 def load_temporal_model(device='cpu'):
     """Load trained temporal model."""
@@ -221,7 +276,8 @@ def seconds_from_midnight(dt):
 def generate_daily_schedule(
     date_str="2026-01-10",
     machine_id=141049,
-    num_sessions=5,
+    patient_csv=None,
+    num_sessions=None,
     output_dir=None,
     seed=None
 ):
@@ -231,7 +287,11 @@ def generate_daily_schedule(
     Args:
         date_str: Date in "YYYY-MM-DD" format
         machine_id: MRI machine ID
-        num_sessions: Number of patient sessions to generate
+        patient_csv: Path to CSV file with patient data (patient_id, age, weight,
+                     height, bodygroup_from, bodygroup_to, ptab columns).
+                     If provided, num_sessions is determined by the CSV row count.
+        num_sessions: Number of patient sessions to generate (only used if
+                      patient_csv is not provided). If None, uses temporal model prediction.
         output_dir: Directory to save outputs
         seed: Random seed
 
@@ -244,12 +304,23 @@ def generate_daily_schedule(
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    # Load patient data if provided
+    patient_data = None
+    if patient_csv is not None:
+        patient_data = load_patient_data(patient_csv)
+        num_sessions = len(patient_data)
+        print(f"Loaded {num_sessions} patients from {patient_csv}")
+    elif num_sessions is None:
+        # Default to a reasonable number if not specified
+        num_sessions = 15
+
     print("=" * 70)
     print("GENERATING DAILY MRI SCHEDULE")
     print("=" * 70)
     print(f"Date: {date_str}")
     print(f"Machine ID: {machine_id}")
     print(f"Sessions: {num_sessions}")
+    print(f"Patient CSV: {patient_csv if patient_csv else 'Not provided (using generated data)'}")
     print(f"Device: {device}\n")
 
     # Parse date
@@ -278,7 +349,8 @@ def generate_daily_schedule(
         session_lambda, timing_params = temporal_model(temporal_tensor)
         start_times_tensor = temporal_model.sample_start_times(timing_params, num_sessions)
 
-    # Use sampled start times
+    # Use sampled start times directly from the temporal model
+    # The model should output realistic times based on its training data
     start_times = start_times_tensor.cpu().numpy()  # [num_sessions]
     start_times = np.sort(start_times)  # Sort chronologically
 
@@ -309,31 +381,47 @@ def generate_daily_schedule(
     except:
         id_to_sequence = {i: f"SCAN_{i}" for i in range(35)}
 
-    # Body part options for random selection
-    body_parts = ['HEAD', 'CHEST', 'ABDOMEN', 'PELVIS', 'SPINE', 'EXTREMITY']
-
     for session_idx, session_start in enumerate(start_datetimes):
-        # Generate patient ID (starting at P001, not P000)
-        patient_id = f"P{session_idx+1:03d}"
-        body_part = np.random.choice(body_parts)
-
-        # Random conditioning for PXChange
-        px_conditioning = np.random.randn(len(PX_FEATURES)).astype(np.float32)
-
-        # Extract patient height/weight from conditioning
-        # PXChange conditioning features: ['age', 'weight', 'height', 'BodyGroup_from', 'BodyGroup_to', 'ptab']
-        if len(PX_FEATURES) >= 3:
-            # Conditioning has: age, weight, height
-            patient_age = int(px_conditioning[0] * 15 + 50)  # Denormalize: mean 50, std 15
-            patient_weight = int(px_conditioning[1] * 15 + 75)  # Denormalize: mean 75kg, std 15
-            patient_height = int(px_conditioning[2] * 10 + 170)  # Denormalize: mean 170cm, std 10
+        # Get patient data from CSV or generate
+        if patient_data is not None:
+            patient_row = patient_data.iloc[session_idx]
+            patient_id = str(patient_row['patient_id'])
+            patient_age = int(patient_row['age'])
+            patient_weight = int(patient_row['weight'])
+            patient_height = int(patient_row['height'])
+            bodygroup_from = int(patient_row['bodygroup_from'])
+            bodygroup_to = int(patient_row['bodygroup_to'])
+            ptab = int(patient_row['ptab'])
         else:
-            # Defaults if not available
-            patient_age = 50
-            patient_weight = 75
-            patient_height = 170
+            # Generate patient data
+            patient_id = f"P{session_idx+1:03d}"
+            patient_age = int(np.random.normal(50, 15))
+            patient_weight = int(np.random.normal(75, 15))
+            patient_height = int(np.random.normal(170, 10))
+            bodygroup_from = np.random.randint(0, 10)
+            bodygroup_to = bodygroup_from  # Usually same for single-region scans
+            ptab = np.random.randint(0, 100)
 
-        print(f"  Session {session_idx+1}/{num_sessions} - Start: {session_start.strftime('%H:%M:%S')} - Patient {patient_id} (Age: {patient_age}, Weight: {patient_weight}kg, Height: {patient_height}cm)")
+        # Get body part name from body group ID
+        body_part = BODYGROUP_NAMES[min(bodygroup_from, len(BODYGROUP_NAMES)-1)]
+
+        # Build conditioning array for PXChange
+        # PXChange conditioning features: ['Age', 'Weight', 'Height', 'BodyGroup_from', 'BodyGroup_to', 'PTAB', 'entity_type']
+        px_conditioning = np.array([
+            patient_age,
+            patient_weight,
+            patient_height,
+            bodygroup_from,
+            bodygroup_to,
+            ptab,
+            0  # entity_type (0 = real patient)
+        ], dtype=np.float32)
+
+        # Truncate to match expected feature count if needed
+        px_conditioning = px_conditioning[:len(PX_FEATURES)]
+
+        print(f"  Session {session_idx+1}/{num_sessions} - Start: {session_start.strftime('%H:%M:%S')} - Patient {patient_id}")
+        print(f"    Age: {patient_age}, Weight: {patient_weight}kg, Height: {patient_height}cm, Body: {body_part}")
 
         # Generate PXChange events
         px_tokens, px_durations = generate_pxchange_session(
@@ -374,6 +462,8 @@ def generate_daily_schedule(
                 'sourceID': sourceID,
                 'scan_sequence': scan_sequence,
                 'body_part': body_part_value,
+                'bodygroup_from': bodygroup_from,
+                'bodygroup_to': bodygroup_to,
                 'duration': round(float(duration), 1),
                 'cumulative_time': seconds_from_midnight(current_time)
             })
@@ -410,6 +500,8 @@ def generate_daily_schedule(
                         'sourceID': '',
                         'scan_sequence': scan_name,
                         'body_part': body_part,
+                        'bodygroup_from': bodygroup_from,
+                        'bodygroup_to': bodygroup_to,
                         'duration': round(float(scan_duration), 1),
                         'cumulative_time': seconds_from_midnight(current_time)
                     })
@@ -427,10 +519,11 @@ def generate_daily_schedule(
     # Update event_id to be sequential after sorting
     schedule_df['event_id'] = range(len(schedule_df))
 
-    # Reorder columns to match sample format EXACTLY
+    # Reorder columns to match sample format with body group additions
     column_order = [
         'event_id', 'timestamp', 'datetime', 'event_type', 'session_id', 'patient_id',
-        'sourceID', 'scan_sequence', 'body_part', 'duration', 'cumulative_time'
+        'sourceID', 'scan_sequence', 'body_part', 'bodygroup_from', 'bodygroup_to',
+        'duration', 'cumulative_time'
     ]
     schedule_df = schedule_df[column_order]
 
@@ -496,17 +589,37 @@ def print_schedule_summary(schedule_df, num_examples=5):
 
 
 if __name__ == "__main__":
-    # Generate a sample daily schedule
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Generate daily MRI schedule')
+    parser.add_argument('--date', type=str, default="2026-01-10",
+                        help='Date in YYYY-MM-DD format (default: 2026-01-10)')
+    parser.add_argument('--machine-id', type=int, default=141049,
+                        help='MRI machine ID (default: 141049)')
+    parser.add_argument('--patient-csv', type=str, default=None,
+                        help='Path to patient data CSV file')
+    parser.add_argument('--num-sessions', type=int, default=None,
+                        help='Number of sessions (default: from CSV or 15)')
+    parser.add_argument('--output-dir', type=str, default=None,
+                        help='Output directory for generated schedule')
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed (default: 42)')
+
+    args = parser.parse_args()
+
+    # Generate daily schedule
     schedule_df = generate_daily_schedule(
-        date_str="2026-01-10",
-        machine_id=141049,
-        num_sessions=5,
-        seed=42
+        date_str=args.date,
+        machine_id=args.machine_id,
+        patient_csv=args.patient_csv,
+        num_sessions=args.num_sessions,
+        output_dir=args.output_dir,
+        seed=args.seed
     )
 
     # Print summary
     print_schedule_summary(schedule_df)
 
     print("\n" + "=" * 70)
-    print("SUCCESS - Prototype daily schedule generated!")
+    print("SUCCESS - Daily schedule generated!")
     print("=" * 70)

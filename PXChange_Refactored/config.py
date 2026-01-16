@@ -23,7 +23,18 @@ for directory in [OUTPUT_DIR, MODEL_SAVE_DIR, VISUALIZATION_DIR]:
 # Sequence configuration
 MAX_SEQ_LEN = 128  # Maximum sequence length for padding
 
-# Conditioning features (context)
+# Body region vocabulary
+BODY_REGIONS = ['HEAD', 'NECK', 'CHEST', 'ABDOMEN', 'PELVIS',
+                'SPINE', 'ARM', 'LEG', 'HAND', 'FOOT', 'UNKNOWN']
+NUM_BODY_REGIONS = 11  # 0-10 for actual body regions
+START_REGION_ID = 11   # Special token for session start
+END_REGION_ID = 12     # Special token for session end
+NUM_REGION_CLASSES = 13  # Total classes including START and END
+
+# Bucket configuration for pre-generation
+BUCKET_SIZE = 1000  # Number of samples per body region
+
+# Conditioning features (context) - original for sequence model
 CONDITIONING_FEATURES = [
     'Age',
     'Weight',
@@ -32,6 +43,24 @@ CONDITIONING_FEATURES = [
     'BodyGroup_to',
     'PTAB',
     'entity_type'       # NEW: REAL_PATIENT=0 or PSEUDO_PATIENT_*=1/2/3
+]
+
+# Conditioning features for Exchange Model (patient-level, no body region)
+EXCHANGE_CONDITIONING_FEATURES = [
+    'Age',
+    'Weight',
+    'Height',
+    'PTAB',
+    'entity_type'
+]
+
+# Conditioning features for Examination Model
+EXAMINATION_CONDITIONING_FEATURES = [
+    'Age',
+    'Weight',
+    'Height',
+    'PTAB',
+    'entity_type'
 ]
 
 # Symbolic sequence vocabulary (sourceID tokens)
@@ -78,7 +107,59 @@ SEQUENCE_FEATURE_COLUMNS = [
 ]
 
 # ============================================================================
-# MODEL ARCHITECTURE - CONDITIONAL SEQUENCE GENERATOR
+# MODEL ARCHITECTURE - EXCHANGE MODEL (Body Region Transitions)
+# ============================================================================
+
+EXCHANGE_MODEL_CONFIG = {
+    'd_model': 128,                # Model dimension
+    'hidden_dim': 256,             # Hidden layer dimension
+    'num_layers': 3,               # Number of layers
+    'dropout': 0.1,
+    'conditioning_dim': len(EXCHANGE_CONDITIONING_FEATURES),
+    'num_regions': NUM_REGION_CLASSES,  # Output classes (body regions + START + END)
+}
+
+# Training configuration for exchange model
+EXCHANGE_TRAINING_CONFIG = {
+    'batch_size': 64,
+    'epochs': 100,
+    'learning_rate': 0.001,
+    'weight_decay': 1e-5,
+    'gradient_clip': 1.0,
+    'early_stopping_patience': 15,
+    'validation_split': 0.2
+}
+
+# ============================================================================
+# MODEL ARCHITECTURE - EXAMINATION MODEL (Body-Region-Specific Event Sequences)
+# ============================================================================
+
+EXAMINATION_MODEL_CONFIG = {
+    'vocab_size': VOCAB_SIZE,
+    'd_model': 256,                # Model dimension
+    'nhead': 8,                    # Number of attention heads
+    'num_encoder_layers': 6,       # Encoder depth
+    'num_decoder_layers': 6,       # Decoder depth
+    'dim_feedforward': 1024,       # FFN dimension
+    'dropout': 0.1,
+    'max_seq_len': MAX_SEQ_LEN,
+    'conditioning_dim': len(EXAMINATION_CONDITIONING_FEATURES) + 1,  # +1 for body region
+}
+
+# Training configuration for examination model
+EXAMINATION_TRAINING_CONFIG = {
+    'batch_size': 32,
+    'epochs': 100,
+    'learning_rate': 0.0001,
+    'warmup_steps': 4000,
+    'label_smoothing': 0.1,
+    'gradient_clip': 1.0,
+    'early_stopping_patience': 15,
+    'validation_split': 0.2
+}
+
+# ============================================================================
+# MODEL ARCHITECTURE - CONDITIONAL SEQUENCE GENERATOR (Original)
 # ============================================================================
 
 SEQUENCE_MODEL_CONFIG = {
