@@ -140,20 +140,20 @@ OUTPUT: DataFrame with columns:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  INPUT                                                               │
-│  ─────                                                               │
+│  INPUT                                                              │
+│  ─────                                                              │
 │  • Date (2026-01-10)                                                │
-│  • Machine ID (141049)                                               │
-│  • Patient CSV (optional)                                            │
+│  • Machine ID (141049)                                              │
+│  • Patient CSV (optional)                                           │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  TEMPORAL MODEL                                                      │
-│  ──────────────                                                      │
+│  TEMPORAL MODEL                                                     │
+│  ──────────────                                                     │
 │  Input:  Date → temporal features (12 dims)                         │
-│  Output: Session start times (seconds from midnight)                 │
-│                                                                      │
+│  Output: Session start times (seconds from midnight)                │
+│                                                                     │
 │  Example: [25200, 27900, 30600, ...]  (7:00, 7:45, 8:30, ...)       │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
@@ -162,30 +162,30 @@ OUTPUT: DataFrame with columns:
                     └───────────────┬───────────────┘
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  PATIENT CONDITIONING                                                │
-│  ────────────────────                                                │
+│  PATIENT CONDITIONING                                               │
+│  ────────────────────                                               │
 │  From CSV:      [age, weight, height, bodygroup_from/to, ptab]      │
-│  Or Generated:  Random realistic values                              │
+│  Or Generated:  Random realistic values                             │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  PXCHANGE SEQUENCE MODEL                                             │
-│  ───────────────────────                                             │
-│  Input:  Conditioning (7 features)                                   │
-│  Output: Token sequence                                              │
-│                                                                      │
+│  PXCHANGE SEQUENCE MODEL                                            │
+│  ───────────────────────                                            │
+│  Input:  Conditioning (7 features)                                  │
+│  Output: Token sequence                                             │
+│                                                                     │
 │  Example: [11, 6, 1, 1, 16, 4, 5, 9, 10, 2, ...]                    │
 │           START→MRI_FRR_2→MRI_CCS_11→...→MRI_EXU_95→...             │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  PXCHANGE DURATION MODEL                                             │
-│  ───────────────────────                                             │
-│  Input:  Conditioning + token sequence                               │
+│  PXCHANGE DURATION MODEL                                            │
+│  ───────────────────────                                            │
+│  Input:  Conditioning + token sequence                              │
 │  Output: μ, σ for each token → sample from Gamma distribution       │
-│                                                                      │
+│                                                                     │
 │  Example: [0.0, 17.5, 56.5, 11.0, ...]  (seconds per event)         │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
@@ -195,28 +195,28 @@ OUTPUT: DataFrame with columns:
                     └───────────────┬───────────────┘
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  SEQOFSEQ SEQUENCE MODEL                                             │
-│  ───────────────────────                                             │
-│  Input:  Conditioning (5 features)                                   │
-│  Output: Scan token sequence                                         │
-│                                                                      │
+│  SEQOFSEQ SEQUENCE MODEL                                            │
+│  ───────────────────────                                            │
+│  Input:  Conditioning (5 features)                                  │
+│  Output: Scan token sequence                                        │
+│                                                                     │
 │  Example: [LOCALIZER, T2_TSE, T1_MPRAGE, DWI_EPI, ...]              │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  SEQOFSEQ DURATION MODEL                                             │
-│  ───────────────────────                                             │
-│  Input:  Conditioning + scan tokens                                  │
-│  Output: Duration per scan                                           │
-│                                                                      │
+│  SEQOFSEQ DURATION MODEL                                            │
+│  ───────────────────────                                            │
+│  Input:  Conditioning + scan tokens                                 │
+│  Output: Duration per scan                                          │
+│                                                                     │
 │  Example: [29.3, 156.7, 179.0, 98.0, ...]  (seconds per scan)       │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  OUTPUT CSV                                                          │
-│  ──────────                                                          │
+│  OUTPUT CSV                                                         │
+│  ──────────                                                         │
 │  Columns: event_id, timestamp, datetime, event_type, session_id,    │
 │           patient_id, sourceID, scan_sequence, body_part,           │
 │           bodygroup_from, bodygroup_to, duration, cumulative_time   │

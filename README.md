@@ -1,170 +1,194 @@
-# MRI Scan Time Prediction Model Optimization
+# MRI Digital Twin - Alternating Pipeline
 
 ## Overview
 
-This document summarizes the optimization work performed on the MRI scan time prediction pipeline.
-
-## Key Problems Identified
-
-### 1. Original LSTM Ensemble Model Limitations
-- **Limited Feature Set**: Only used predicted proportions as input
-- **Missing Context**: Ignored valuable information about:
-  - Scan types (sourceID sequences)
-  - Patient characteristics (Age, Weight, Height)
-  - Body regions being scanned (BodyGroup_from/to)
-  - Equipment settings (PTAB values)
-  - Patient positioning (Position, Direction)
-
-### 2. Model Architecture Issues
-- Three-stage ensemble (Statistical → Sequential → Meta-learner) was complex
-- No direct use of original sequence features
-- Proportions alone don't capture scan type information
-
-## Optimizations Implemented
-
-### Enhanced Model Architecture (`LSTM_TF_Optimized.py`)
-
-#### Multi-Input Architecture
-The new model combines THREE information pathways:
-
-1. **Original Sequence Features Branch**
-   - Input: sourceID, PTAB, BodyGroup_from, BodyGroup_to, Position_encoded, Direction_encoded
-   - Architecture: Bidirectional LSTM (128 units) → Multi-Head Attention (8 heads) → Global Pooling
-   - Purpose: Captures temporal patterns in scan sequences and equipment usage
-
-2. **Predicted Proportions Branch**
-   - Input: Predicted time proportions from Transformer model
-   - Architecture: Bidirectional GRU (64 units) → Multi-Head Attention (4 heads) → Global Pooling
-   - Purpose: Leverages the proportion patterns learned by the Transformer
-
-3. **Patient/Scan Metadata Branch**
-   - Input: Age, Weight, Height, BodyGroup_from, BodyGroup_to, Sequence Length
-   - Architecture: Dense layers (32 → 16 units)
-   - Purpose: Captures patient-specific and scan-level characteristics
-
-#### Final Prediction Network
-- All three branches are concatenated
-- Deep feedforward network: 256 → 128 → 64 units with dropout
-- Single output: Predicted total scan time in seconds
-
-### Key Improvements
-
-1. **Feature Engineering**
-   - ✅ Incorporates ALL available features, not just proportions
-   - ✅ Separate pathways for sequential vs. static features
-   - ✅ Attention mechanisms to focus on important timesteps
-
-2. **Training Enhancements**
-   - Huber loss (robust to outliers)
-   - ReduceLROnPlateau (adaptive learning rate)
-   - EarlyStopping (prevents overfitting)
-   - StandardScaler normalization
-
-3. **Data Pipeline**
-   - Proper merging of proportion predictions with preprocessed data
-   - Handles missing data gracefully
-   - Validates data integrity before training
-
-## Results
-
-### Quick Test (Dataset 176401, 50 epochs)
-- **MAE**: 113.88 seconds (~1.9 minutes)
-- **RMSE**: 215.56 seconds (~3.6 minutes)
-- **MAPE**: 29.47%
-- **Training Time**: ~35 seconds
-
-### Full Training (All datasets, 200 epochs)
-- Currently in progress...
-- Processes all datasets with proportion predictions available
-- Generates visualizations for each dataset
-- Saves predictions to `prediction_{dataset_id}_total_time_refactored.csv`
-
-## Pipeline Structure
+This project implements a **digital twin** for MRI facility workflows, generating synthetic examination schedules that match real-world patterns. The core approach uses a **sequential alternating model** that mimics how MRI examinations actually occur:
 
 ```
-Raw Data
-    ↓
-[Preprocessor] → preprocessed_{id}.csv
-    ↓
-[Transformer Model] → prediction_{id}_proportions_refactored.csv
-    ↓
-[Enhanced LSTM Model] → prediction_{id}_total_time_refactored.csv
-    ↓
-[Combine & Denormalize] → combined_denormalized_predictions.csv
+Exchange → Examination → Exchange → Examination → ... → Exchange (final)
 ```
 
-## Files Created/Modified
+## Architecture
 
-### New Files
-- `LSTM_TF_Optimized.py` - Enhanced total time prediction model
-- `test_optimized_model.py` - Quick testing script
-- `MODEL_OPTIMIZATION_SUMMARY.md` - This document
+### Key Insight (from Meeting Transcript)
 
-### Existing Files
-- `preprocessor.py` - No changes (already optimized)
-- `TF_TimeSeries_Refactored.py` - No changes (proportion prediction works well)
-- `LSTM_TF_Refactored.py` - Can be replaced by `LSTM_TF_Optimized.py`
-- `combine_and_denormalize_predictions.py` - No changes needed
+> "You can just think about body from→to buckets. Produce 1000 samples per bucket.
+> To generate a day, you don't need to rerun models - just pick random samples
+> from already generated buckets."
 
-## Usage
+### Two Main Models
 
-### Train on all datasets:
+1. **Exchange Model**: Predicts events during body region transitions (patient setup/breakdown, coil changes, table movements)
+   - Input: Patient conditioning (age, weight, height, PTAB, direction) + current body region
+   - Output: Event sequence for the transition phase
+
+2. **Examination Model**: Generates MRI scan sequences for a specific body region
+   - Input: Patient conditioning + body region being examined
+   - Output: Scan event sequence (MRI_EXU_95 markers, measurements, etc.)
+
+### Bucket-Based Generation
+
+Instead of running models on-the-fly, we pre-generate **1000 samples per bucket**:
+- **Exchange buckets**: One bucket per body region transition (e.g., HEAD→CHEST)
+- **Examination buckets**: One bucket per body region (e.g., HEAD examinations)
+
+Day simulation then simply **samples randomly from these buckets**, making generation instant.
+
+## Project Structure
+
+```
+Time-Series-Models/
+├── AlternatingPipeline/           # Main implementation
+│   ├── config.py                  # Central configuration
+│   ├── models/
+│   │   ├── exchange_model.py      # Body region transition model
+│   │   └── examination_model.py   # Scan sequence generator
+│   ├── data/
+│   │   └── preprocessing.py       # Extract exchange/examination events
+│   ├── training/
+│   │   ├── train_exchange.py      # Train exchange model
+│   │   └── train_examination.py   # Train examination model
+│   ├── generation/
+│   │   ├── bucket_generator.py    # Pre-generate 1000 samples/bucket
+│   │   └── day_simulator.py       # Sample from buckets for day
+│   ├── validation/
+│   │   └── metrics.py             # Real vs predicted comparison
+│   ├── buckets/                   # Pre-generated samples
+│   ├── saved_models/              # Trained models
+│   └── outputs/                   # Generated schedules
+│
+├── PXChange_Refactored/           # Raw data & legacy models
+│   └── data/*.csv                 # 135 raw MRI event log CSVs
+│
+├── _archive/                      # Archived old implementations
+│
+└── docs/                          # Documentation
+    ├── Transcript of Meeting.md   # Requirements source
+    ├── Context_PatientWorkflow.md # Workflow context
+    └── Instructions_New_MeetingNotes.md
+```
+
+## Quick Start
+
+### 1. Preprocess Data
+
 ```bash
-cd PXChange
-python LSTM_TF_Optimized.py
+cd AlternatingPipeline
+python -c "from data.preprocessing import preprocess_all_data; preprocess_all_data()"
 ```
 
-### Quick test on single dataset:
+### 2. Train Models
+
 ```bash
-cd PXChange
-python test_optimized_model.py
+# Train Exchange Model
+python training/train_exchange.py
+
+# Train Examination Model
+python training/train_examination.py
 ```
 
-### Complete pipeline (from scratch):
-```bash
-# 1. Preprocess data
-python processing/preprocessor.py
+### 3. Generate Buckets
 
-# 2. Generate proportion predictions
-python TF_TimeSeries_Refactored.py
+```python
+from models import create_exchange_model, create_examination_model
+from generation import BucketGenerator
 
-# 3. Generate total time predictions
-python LSTM_TF_Optimized.py
+# Load trained models
+exchange_model = create_exchange_model()
+exchange_model.load_state_dict(torch.load('saved_models/exchange/exchange_model_best.pt'))
 
-# 4. Combine all predictions
-python processing/combine_and_denormalize_predictions.py
+examination_model = create_examination_model()
+examination_model.load_state_dict(torch.load('saved_models/examination/examination_model_best.pt'))
+
+# Generate buckets (1000 samples each)
+generator = BucketGenerator(exchange_model, examination_model)
+generator.generate_all_buckets()
+generator.save_buckets()
 ```
 
-## Future Improvements
+### 4. Simulate a Day
 
-1. **Hyperparameter Tuning**
-   - Grid search for optimal learning rate, dropout rates, layer sizes
-   - Experiment with different attention head configurations
+```python
+from generation import DaySimulator
 
-2. **Advanced Architectures**
-   - Try Temporal Convolutional Networks (TCN)
-   - Experiment with Transformer encoders for sequence features
-   - Add cross-attention between feature branches
+# Define ground truth patient sequence
+patients = [
+    {'patient_id': 'PAT001', 'body_region': 'HEAD'},
+    {'patient_id': 'PAT002', 'body_region': 'CHEST'},
+    {'patient_id': 'PAT003', 'body_region': 'SPINE'},
+]
 
-3. **Ensemble Methods**
-   - Combine multiple model predictions
-   - Use bootstrap aggregating (bagging)
+# Simulate
+simulator = DaySimulator(buckets_dir='buckets')
+schedule = simulator.simulate_day(patients)
+simulator.save_schedule(schedule, 'generated_day.csv')
+```
 
-4. **Feature Engineering**
-   - Create interaction features (e.g., Age × BodyGroup)
-   - Add temporal features (time of day, day of week if available)
-   - One-hot encode sourceID for better representation
+## Data Format
 
-5. **Data Augmentation**
-   - Synthetic sequence generation
-   - Time warping for sequence data
+### Input: Raw Event Log CSVs
 
-## Conclusion
+Each CSV contains MRI machine events with columns:
+- `datetime`, `sourceID`, `timediff`
+- `BodyGroup_from`, `BodyGroup_to` (body region transitions)
+- `PatientId`, `Age`, `Weight`, `Height`, `Direction`
+- Coil elements: `BC`, `SP1-8`, `HE1-4`, etc.
+- Hardware signals: `ZAxisInPossible`, `YAxisDownPossible`, etc.
 
-The enhanced model significantly improves total time prediction by:
-- Using ALL available features instead of just proportions
-- Employing specialized pathways for different feature types
-- Leveraging attention mechanisms to focus on important information
-- Proper handling of patient metadata
+### Output: Generated Schedule CSV
 
-Initial results show promising performance with MAE of ~114 seconds on test data.
+```csv
+event_id,timestamp,datetime,event_type,patient_id,sourceID,body_region,body_from,body_to,duration
+0,0.0,2024-04-16T07:00:00,exchange,,MRI_FRR_2,,START,HEAD,5.2
+1,5.2,2024-04-16T07:00:05,exchange,,MRI_CCS_11,,START,HEAD,3.1
+2,8.3,2024-04-16T07:00:08,examination,PAT001,MRI_EXU_95,HEAD,,,29.3
+...
+```
+
+## Key Configuration
+
+Edit `AlternatingPipeline/config.py`:
+
+```python
+# Bucket configuration
+BUCKET_SIZE = 1000  # Samples per bucket
+
+# Body regions
+BODY_REGIONS = ['HEAD', 'NECK', 'CHEST', 'ABDOMEN', 'PELVIS',
+                'SPINE', 'ARM', 'LEG', 'HAND', 'FOOT', 'UNKNOWN']
+
+# Model architectures
+EXCHANGE_MODEL_CONFIG = {...}
+EXAMINATION_MODEL_CONFIG = {...}
+```
+
+## Validation
+
+Compare real vs predicted schedules:
+
+```python
+from validation import compare_real_vs_predicted, print_comparison_report
+
+metrics = compare_real_vs_predicted(real_schedule, predicted_schedule)
+print_comparison_report(metrics)
+```
+
+Outputs metrics for dashboard integration:
+- Total duration (real vs predicted)
+- Per-body-region examination times
+- Per-exchange-type transition times
+- Event type distributions
+
+## Customer-Specific Models
+
+Currently focused on **customer-specific models** (one model per MRI machine). Future work may expand to multi-customer modeling.
+
+## References
+
+- `Transcript of Meeting.md` - Original requirements discussion
+- `Context_PatientWorkflow.md` - Patient workflow context
+- `Instructions_New_MeetingNotes.md` - Implementation notes
+
+## License
+
+Internal use only.
