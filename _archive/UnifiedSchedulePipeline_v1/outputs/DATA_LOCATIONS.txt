@@ -1,0 +1,76 @@
+================================================================================
+PREPROCESSED DATA LOCATIONS - QUICK REFERENCE
+================================================================================
+
+Date: 2025-12-16
+Architecture: Pseudo-Patient (Sequence Segmentation)
+
+================================================================================
+NEW PREPROCESSED DATA (Use This for Training!)
+================================================================================
+
+PXChange:
+  Location: PXChange_Refactored/data/preprocessed_segmented/
+  Files: 17 segmented CSV files
+  Full Path: C:\Users\lukis\Documents\GitHub\Time-Series-Models\PXChange_Refactored\data\preprocessed_segmented
+
+  Sample Files:
+    - 141049_segmented.csv (1.8 MB, 3,739 rows, 3 pseudo-patient)
+    - 155687_segmented.csv (1.6 MB)
+    - 175832_segmented.csv (1.8 MB)
+    - ... and 14 more
+
+SeqofSeq:
+  Location: SeqofSeq_Pipeline/data/preprocessed_segmented/
+  Files: 2 segmented CSV files
+  Full Path: C:\Users\lukis\Documents\GitHub\Time-Series-Models\SeqofSeq_Pipeline\data\preprocessed_segmented
+
+  Sample Files:
+    - 175832_segmented.csv (559 KB, 229 segments, 35 pseudo-patient)
+    - 176625_segmented.csv (3.3 MB, 1,110 segments, 374 pseudo-patient)
+
+================================================================================
+DATA STRUCTURE
+================================================================================
+
+Each segmented file contains:
+
+Key Columns:
+  - entity_type: 0 = REAL_PATIENT, 1 = PSEUDO_PATIENT_PAUSE
+  - sourceID: Scan type (e.g., MRI_MSR_104) or "IDLE" for pseudo-patients
+  - segment_index: Which segment in the original sequence
+  - original_sequence_id: Link back to original patient sequence
+  - pause_duration_seconds: Duration of pause (only for pseudo-patients)
+
+Entity Type Distribution:
+  - Real Patient (0): ~84%
+  - Pseudo-Patient (1): ~16%
+
+================================================================================
+OLD DATA (Don't Use - Kept for Reference)
+================================================================================
+
+preprocessed_with_pauses/ - Old PAUSE token injection method
+  - PXChange: 40 files
+  - SeqofSeq: 1 file
+
+preprocessed/ - Original preprocessing (oldest)
+  - PXChange: 38 files
+  - SeqofSeq: 1 file
+
+================================================================================
+SUMMARY
+================================================================================
+
+Total Processed:
+  - PXChange: 17 files, 2,413 segments, 51,390 events
+  - SeqofSeq: 2 files, 1,339 segments, 5,766 scans
+  - Combined: 3,752 segments, 604 pseudo-patient (16.10%)
+
+Next Steps:
+  1. Use data from preprocessed_segmented/ directories for training
+  2. Update training scripts to handle entity_type conditioning feature
+  3. PXChange models now expect 7 conditioning features (was 6)
+  4. SeqofSeq models now expect 5 conditioning features (was 4)
+
+For questions, see: UnifiedSchedulePipeline/outputs/preprocessing_summary.txt

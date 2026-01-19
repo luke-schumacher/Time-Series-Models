@@ -1,0 +1,194 @@
+"""
+Configuration for the Alternating Pipeline (Exchange <-> Examination)
+
+This pipeline implements the sequential alternating approach:
+  Exchange Model -> Examination Model -> Exchange Model -> ...
+
+Based on the meeting transcript requirements:
+- Bucket-based generation (1000 samples per bucket)
+- Ground truth patient sequences for day simulation
+- Customer-specific models
+"""
+import os
+
+# ============================================================================
+# PATH CONFIGURATION
+# ============================================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+DATA_DIR = os.path.join(PROJECT_ROOT, 'PXChange_Refactored', 'data')
+OUTPUT_DIR = os.path.join(BASE_DIR, 'outputs')
+MODEL_SAVE_DIR = os.path.join(BASE_DIR, 'saved_models')
+BUCKETS_DIR = os.path.join(BASE_DIR, 'buckets')
+
+# Create directories if they don't exist
+for directory in [OUTPUT_DIR, MODEL_SAVE_DIR, BUCKETS_DIR,
+                  os.path.join(BUCKETS_DIR, 'exchange'),
+                  os.path.join(BUCKETS_DIR, 'examination')]:
+    os.makedirs(directory, exist_ok=True)
+
+# ============================================================================
+# DATA CONFIGURATION
+# ============================================================================
+
+# Sequence configuration
+MAX_SEQ_LEN = 128  # Maximum sequence length for padding
+
+# Body region vocabulary
+BODY_REGIONS = ['HEAD', 'NECK', 'CHEST', 'ABDOMEN', 'PELVIS',
+                'SPINE', 'ARM', 'LEG', 'HAND', 'FOOT', 'UNKNOWN']
+BODY_REGION_TO_ID = {region: i for i, region in enumerate(BODY_REGIONS)}
+ID_TO_BODY_REGION = {i: region for i, region in enumerate(BODY_REGIONS)}
+
+NUM_BODY_REGIONS = 11  # 0-10 for actual body regions
+START_REGION_ID = 11   # Special token for session start
+END_REGION_ID = 12     # Special token for session end
+NUM_REGION_CLASSES = 13  # Total classes including START and END
+
+# Bucket configuration for pre-generation
+BUCKET_SIZE = 1000  # Number of samples per body region transition
+
+# ============================================================================
+# CONDITIONING FEATURES
+# ============================================================================
+
+# Exchange Model conditioning (for body region transitions)
+EXCHANGE_CONDITIONING_FEATURES = [
+    'Age',
+    'Weight',
+    'Height',
+    'PTAB',
+    'Direction_encoded'  # 0 = Head First, 1 = Feet First
+]
+
+# Examination Model conditioning (for scan sequences within a body region)
+EXAMINATION_CONDITIONING_FEATURES = [
+    'Age',
+    'Weight',
+    'Height',
+    'PTAB',
+    'Direction_encoded'
+]
+
+# ============================================================================
+# SOURCE ID VOCABULARY (Event Tokens)
+# ============================================================================
+
+SOURCEID_VOCAB = {
+    'PAD': 0,           # Padding token
+    'MRI_CCS_11': 1,    # Coil change event
+    'MRI_EXU_95': 2,    # Measurement start (examination marker)
+    'MRI_FRR_18': 3,    # Scanner hardware
+    'MRI_FRR_257': 4,   # Table movement
+    'MRI_FRR_264': 5,   # Axis movement possible
+    'MRI_FRR_2': 6,     # Door open warning
+    'MRI_FRR_3': 7,     # Door closed
+    'MRI_FRR_34': 8,    # Patient positioned
+    'MRI_MPT_1005': 9,  # Patient registered
+    'MRI_MSR_100': 10,  # Start prepare
+    'START': 11,        # Sequence start marker
+    'MRI_MSR_104': 12,  # Measurement finished OK
+    'MRI_MSR_21': 13,   # Measurement info
+    'END': 14,          # Sequence end marker
+    'MRI_MSR_34': 15,   # Measurement stopped by user
+    'MRI_FRR_256': 16,  # PTAB position set
+    'UNK': 17           # Unknown token
+}
+
+ID_TO_SOURCEID = {v: k for k, v in SOURCEID_VOCAB.items()}
+VOCAB_SIZE = len(SOURCEID_VOCAB)
+START_TOKEN_ID = SOURCEID_VOCAB['START']
+END_TOKEN_ID = SOURCEID_VOCAB['END']
+PAD_TOKEN_ID = SOURCEID_VOCAB['PAD']
+
+# ============================================================================
+# COIL ELEMENT COLUMNS
+# ============================================================================
+
+COIL_COLUMNS = [
+    'BC',   # Body coil
+    'SP1', 'SP2', 'SP3', 'SP4', 'SP5', 'SP6', 'SP7', 'SP8',  # Spine coils
+    '15K',  # 15-channel knee coil
+    'HW1', 'HW2', 'HW3',  # Hand/Wrist coils
+    'HE1', 'HE2', 'HE3', 'HE4',  # Head coils
+    'NE1', 'NE2',  # Neck coils
+    'SHL',  # Shoulder coil
+    'BO1', 'BO2', 'BO3',  # Body coils
+    'FA', 'TO', 'FS',  # Foot/Ankle coils
+    'PA1', 'PA2', 'PA3', 'PA4', 'PA5', 'PA6',  # Peripheral angiography coils
+    'SN'   # Unknown
+]
+
+# ============================================================================
+# EXCHANGE MODEL CONFIGURATION
+# ============================================================================
+
+EXCHANGE_MODEL_CONFIG = {
+    'd_model': 128,                # Model dimension
+    'hidden_dim': 256,             # Hidden layer dimension
+    'num_layers': 3,               # Number of MLP layers
+    'dropout': 0.1,
+    'conditioning_dim': len(EXCHANGE_CONDITIONING_FEATURES),
+    'num_regions': NUM_REGION_CLASSES,  # Output: body regions + START + END
+}
+
+EXCHANGE_TRAINING_CONFIG = {
+    'batch_size': 64,
+    'epochs': 100,
+    'learning_rate': 0.001,
+    'weight_decay': 1e-5,
+    'gradient_clip': 1.0,
+    'early_stopping_patience': 15,
+    'validation_split': 0.2
+}
+
+# ============================================================================
+# EXAMINATION MODEL CONFIGURATION
+# ============================================================================
+
+EXAMINATION_MODEL_CONFIG = {
+    'vocab_size': VOCAB_SIZE,
+    'd_model': 256,                # Model dimension
+    'nhead': 8,                    # Number of attention heads
+    'num_encoder_layers': 6,       # Encoder depth
+    'num_decoder_layers': 6,       # Decoder depth
+    'dim_feedforward': 1024,       # FFN dimension
+    'dropout': 0.1,
+    'max_seq_len': MAX_SEQ_LEN,
+    'conditioning_dim': len(EXAMINATION_CONDITIONING_FEATURES) + 1,  # +1 for body region
+    'num_body_regions': NUM_BODY_REGIONS,
+}
+
+EXAMINATION_TRAINING_CONFIG = {
+    'batch_size': 32,
+    'epochs': 100,
+    'learning_rate': 0.0001,
+    'warmup_steps': 4000,
+    'label_smoothing': 0.1,
+    'gradient_clip': 1.0,
+    'early_stopping_patience': 15,
+    'validation_split': 0.2
+}
+
+# ============================================================================
+# GENERATION CONFIGURATION
+# ============================================================================
+
+GENERATION_CONFIG = {
+    'temperature': 1.0,      # Sampling temperature
+    'top_k': 10,             # Top-k sampling
+    'top_p': 0.9,            # Nucleus sampling
+    'max_length': MAX_SEQ_LEN
+}
+
+# ============================================================================
+# RANDOM SEED
+# ============================================================================
+
+RANDOM_SEED = 42
+
+# ============================================================================
+# DEVICE CONFIGURATION
+# ============================================================================
+
+USE_GPU = True  # Set to False to force CPU usage
