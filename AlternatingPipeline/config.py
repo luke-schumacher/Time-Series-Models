@@ -53,6 +53,7 @@ BUCKET_SIZE = 1000  # Number of samples per body region transition
 # ============================================================================
 
 # Exchange Model conditioning (for body region transitions)
+# Base features (always included)
 EXCHANGE_CONDITIONING_FEATURES = [
     'Age',
     'Weight',
@@ -60,6 +61,26 @@ EXCHANGE_CONDITIONING_FEATURES = [
     'PTAB',
     'Direction_encoded'  # 0 = Head First, 1 = Feet First
 ]
+
+# Temporal features (added during preprocessing)
+TEMPORAL_FEATURES = [
+    'hour_of_day',       # 0-23
+    'day_of_week',       # 0-6 (Monday=0)
+    'is_morning',        # 0 or 1 (before noon)
+    'hour_sin',          # sin(2*pi*hour/24)
+    'hour_cos',          # cos(2*pi*hour/24)
+]
+
+# Number of coil features (binary: 0 or 1)
+NUM_COIL_FEATURES = 30  # Number of coil columns
+
+# Total conditioning dimension for exchange model
+# Base (5) + Temporal (5) + Coils (30) = 40
+EXCHANGE_TOTAL_CONDITIONING_DIM = (
+    len(EXCHANGE_CONDITIONING_FEATURES) +
+    len(TEMPORAL_FEATURES) +
+    NUM_COIL_FEATURES
+)
 
 # Examination Model conditioning (for scan sequences within a body region)
 EXAMINATION_CONDITIONING_FEATURES = [
@@ -69,6 +90,12 @@ EXAMINATION_CONDITIONING_FEATURES = [
     'PTAB',
     'Direction_encoded'
 ]
+
+# Examination model also uses temporal features
+EXAMINATION_TOTAL_CONDITIONING_DIM = (
+    len(EXAMINATION_CONDITIONING_FEATURES) +
+    len(TEMPORAL_FEATURES)
+)
 
 # ============================================================================
 # SOURCE ID VOCABULARY (Event Tokens)
