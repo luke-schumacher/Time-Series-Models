@@ -23,6 +23,19 @@ from models.exchange_model import create_exchange_model
 from data.preprocessing import load_preprocessed_data
 
 
+def safe_float(val, default=0.0):
+    """Safely convert a value to float, handling errors and NaN."""
+    if val is None:
+        return default
+    try:
+        result = float(val)
+        if np.isnan(result) or np.isinf(result):
+            return default
+        return result
+    except (ValueError, TypeError):
+        return default
+
+
 class ExchangeDataset(Dataset):
     """Dataset for exchange (body region transition) training."""
 
@@ -34,14 +47,14 @@ class ExchangeDataset(Dataset):
         self.data = []
 
         for seq in exchange_sequences:
-            # Extract conditioning features
+            # Extract conditioning features with safe conversion
             cond = seq['conditioning']
             conditioning = torch.tensor([
-                cond.get('Age', 0),
-                cond.get('Weight', 0),
-                cond.get('Height', 0),
-                cond.get('PTAB', 0),
-                cond.get('Direction_encoded', 0)
+                safe_float(cond.get('Age', 0)),
+                safe_float(cond.get('Weight', 0)),
+                safe_float(cond.get('Height', 0)),
+                safe_float(cond.get('PTAB', 0)),
+                safe_float(cond.get('Direction_encoded', 0))
             ], dtype=torch.float32)
 
             # Body region transition

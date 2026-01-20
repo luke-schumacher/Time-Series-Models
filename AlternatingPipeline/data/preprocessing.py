@@ -37,6 +37,12 @@ def load_raw_csv(filepath):
     # Parse datetime
     df['datetime'] = pd.to_datetime(df['datetime'])
 
+    # Clean numeric columns - convert errors to NaN then fill with 0
+    numeric_cols = ['Age', 'Weight', 'Height', 'PTAB', 'timediff']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
     # Encode direction
     df['Direction_encoded'] = df['Direction'].apply(
         lambda x: 0 if x == 'Head First' else 1 if x == 'Feet First' else -1
