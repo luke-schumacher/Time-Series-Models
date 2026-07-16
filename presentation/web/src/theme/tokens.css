@@ -1,0 +1,97 @@
+@import 'tailwindcss';
+
+/*
+ * Siemens Healthineers palette — canon from the handover deck (main.tex).
+ * teal-ink / orange-ink are darkened variants that pass WCAG AA for small
+ * text on white; the canonical hues are reserved for large numerals,
+ * fills, and accents.
+ */
+@theme {
+  --color-navy: #003087;
+  --color-navy-deep: #002365;
+  /* validated chart-fill variant: #003087 is too dark as a large fill */
+  --color-navy-chart: #2f5cb0;
+  --color-teal: #009999;
+  --color-teal-ink: #007070;
+  --color-orange: #ec6602;
+  --color-orange-ink: #b04d00;
+  --color-surface: #f0f7f7;
+  --color-mist: #cceeee;
+  --color-ink: #1a1a1a;
+  --color-muted: #6b7b7b;
+  --color-paper: #ffffff;
+
+  --font-display: 'Archivo Variable', 'Archivo', system-ui, sans-serif;
+  --font-body: 'Source Sans 3 Variable', 'Source Sans 3', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+:root {
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  background: #0a1430; /* letterbox behind the scaled stage */
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+/* Display face: slightly expanded width where supported — instrument-panel character */
+.font-display {
+  font-variation-settings: 'wdth' 112;
+  letter-spacing: -0.01em;
+}
+
+.kpi-number {
+  font-family: var(--font-display);
+  font-variation-settings: 'wdth' 118;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: -0.02em;
+}
+
+/* Fragment steps: revealed by the deck engine via data-visible */
+.frag {
+  opacity: 0;
+  transform: translateY(8px);
+  transition:
+    opacity 320ms ease,
+    transform 320ms ease;
+}
+.frag[data-visible='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Slide entry: gentle rise. Transform only — content must stay visible even
+   when animations never run (headless capture, print, reduced motion). */
+.slide-enter {
+  animation: slide-in 240ms ease both;
+}
+@keyframes slide-in {
+  from {
+    transform: translateY(6px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* The scan-line cursor on the schedule progress bar (signature element) */
+.scanline {
+  box-shadow: 0 0 6px 1px rgba(0, 153, 153, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frag,
+  .slide-enter {
+    transition: none;
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

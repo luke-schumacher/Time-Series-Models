@@ -1,0 +1,32 @@
+/* Print fallback (?print then Ctrl+P) — one slide per landscape page. */
+.print-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 0;
+}
+.print-page {
+  overflow: hidden;
+  box-shadow: 0 1px 8px rgba(0, 0, 0, 0.18);
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 6mm;
+  }
+  body {
+    overflow: visible !important;
+    background: white !important;
+  }
+  .print-root {
+    gap: 0;
+    padding: 0;
+  }
+  .print-page {
+    box-shadow: none;
+    page-break-after: always;
+    break-inside: avoid;
+  }
+}
