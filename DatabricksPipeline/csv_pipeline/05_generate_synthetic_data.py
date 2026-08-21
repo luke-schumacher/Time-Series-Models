@@ -353,8 +353,21 @@ print("Exchange model loaded.")
 # so a config that hardcodes NUM_SERIALS=10 doesn't clash with a 21-serial checkpoint.
 _exam_ckpt = torch.load(f"{MODELS_DIR}/examination/examination_model_best.pt", map_location=device)
 _exam_config = dict(EXAMINATION_MODEL_CONFIG)
+EXAM_NUM_SERIALS = int(NUM_SERIALS)
 if 'serial_embedding.weight' in _exam_ckpt:
     _exam_config['num_serials'] = _exam_ckpt['serial_embedding.weight'].shape[0]
+    # The OTHER half of PR #59. Deriving num_serials fixes how the model is
+    # BUILT; the generation loop below still has to choose which embedding row
+    # each synthetic scanner uses, and it was clamping against
+    # AlternatingPipeline.config.NUM_SERIALS — a hardcoded 10, because step 04's
+    # `_ap_cfg.NUM_SERIALS = ...` fix-up happens in a DIFFERENT notebook session
+    # and does not survive into this one.
+    #
+    # At 10 serials the two agree and it is invisible. At 21 it is not: the
+    # model gets a [21, 16] embedding and this loop routes customers 11-21 all
+    # to serial 9, so eleven scanners share one identity while eleven trained
+    # rows go unused. Silent — no error, just wrong conditioning.
+    EXAM_NUM_SERIALS = _exam_config['num_serials']
 examination_model = create_examination_model(_exam_config).to(device)
 # load_checkpoint_lenient, NOT a bare strict=False load. Deriving num_serials
 # above fixes the KNOWN shape mismatch; the lenient loader is what catches the
@@ -1028,7 +1041,8 @@ for customer_idx, (serial_str, daily_schedules) in enumerate(customer_schedules.
     # serial_idx indexes the examination model's serial embedding. customer
     # iteration order matches step 03's SERIAL_NUMBERS order, so customer_idx
     # is the serial_idx step 03 wrote into the pkl.
-    serial_idx = min(customer_idx, NUM_SERIALS - 1)
+    # Clamped against the CHECKPOINT's embedding height, not a config constant.
+    serial_idx = min(customer_idx, EXAM_NUM_SERIALS - 1)
 
     all_exchange_rows  = []
     all_exam_rows      = []

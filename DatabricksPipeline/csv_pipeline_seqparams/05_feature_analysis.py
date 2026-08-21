@@ -126,19 +126,30 @@ print("\n" + "="*60)
 print("SECTION B: Permutation importance")
 print("="*60)
 
+import json
 import torch
 import sys
 
-_AP_PATH = "/tmp/alternating_pipeline_src"  # matches 04_train_models.py's TMP_ROOT
-if _AP_PATH not in sys.path:
-    sys.path.insert(0, _AP_PATH)
+# THIS NOTEBOOK BOOTSTRAPS ITS OWN SOURCE — see 06_compare_models.py for the
+# full story. It used to import from /tmp/alternating_pipeline_src, a directory
+# only 04_train_models.py populates, and therefore could only run on the machine
+# that had just trained. bootstrap_pipeline_source() comes from `%run ./config`
+# above and is idempotent.
+REPO_ROOT = bootstrap_pipeline_source()
 
-# See 06_compare_models.py — this notebook relies on 04's copy, which /tmp keeps
-# alive across the whole cluster lifetime and never refreshes on its own.
-assert_pipeline_source_fresh(_AP_PATH, required_modules=[
+
+# Post-condition on what the bootstrap actually produced. The refresh above
+# WARNS rather than fails when `git fetch` cannot reach the network, so an
+# offline cluster keeps working — at the cost of possibly running an old commit.
+# This is what turns that into one readable line instead of a bare
+# ModuleNotFoundError deep inside the run. purge=False: the bootstrap has just
+# pinned these modules on purpose.
+assert_pipeline_source_fresh(REPO_ROOT, purge=False, required_modules=[
     "AlternatingPipeline.config",
     "AlternatingPipeline.models.examination_model",
+    "AlternatingPipeline.models.checkpoint_compat",
     "AlternatingPipeline.training.utils",
+    "AlternatingPipeline.data.protocol_vocab",
 ])
 
 from AlternatingPipeline.config import (
@@ -147,15 +158,50 @@ from AlternatingPipeline.config import (
 from AlternatingPipeline.models.examination_model import create_examination_model
 from AlternatingPipeline.models.checkpoint_compat import load_checkpoint_lenient
 from AlternatingPipeline.training.utils import temporal_split, build_conditioning_tensor
+from AlternatingPipeline.data.protocol_vocab import protocol_id
 
 CHECKPOINT_PATH = f"{MODELS_DIR}/examination/examination_model_best.pt"
 if not os.path.exists(CHECKPOINT_PATH):
     print(f"No checkpoint at {CHECKPOINT_PATH} yet — run 04_train_models.py first. "
           f"Skipping Section B.")
 else:
+    # --- the checkpoint's manifest is the authority for its architecture ----
+    # Not config.py: on 2026-08-21 the rare-field floor moved between training
+    # and analysis and every notebook here tried to load a 277-dim checkpoint
+    # into a 351-dim model. See 06_compare_models.py for the full account.
+    _SPEC = load_trained_model_spec(f"{MODELS_DIR}/MODEL_MANIFEST.json")
+    if _SPEC is None:
+        print(f"!! No usable MODEL_MANIFEST.json at {MODELS_DIR} — falling back to "
+              f"config.py's feature list. Expect a shape mismatch if the checkpoint "
+              f"was trained under a different feature selection.")
+        EXTRA_FEATURES = list(EXAMINATION_SEQPARAM_FEATURES)
+    else:
+        EXTRA_FEATURES = list(_SPEC.extra_conditioning_features)
+        print(f"Conditioning pinned to {_SPEC.path}: {len(EXTRA_FEATURES)} extra "
+              f"features, base_conditioning_dim={_SPEC.base_conditioning_dim}, "
+              f"num_protocols={_SPEC.num_protocols}")
+
+    # --- the vocabulary the checkpoint's protocol rows are indexed by -------
+    # Mandatory, not best-effort: without it every prediction below silently
+    # uses RARE_PROTOCOL_ID, and a permutation-importance table computed that
+    # way ranks every feature against a model whose strongest input is dead.
+    _VOCAB_PATH = f"{MODELS_DIR}/examination/protocol_vocab.json"
+    try:
+        with open(_VOCAB_PATH) as _vf:
+            PROTOCOL_VOCAB = json.load(_vf)["vocab"]
+        print(f"Protocol vocabulary: {len(PROTOCOL_VOCAB):,} protocols from {_VOCAB_PATH}")
+    except (OSError, ValueError, KeyError) as _err:
+        raise RuntimeError(
+            f"Cannot read the protocol vocabulary at {_VOCAB_PATH} ({_err}). Re-run "
+            f"04_train_models.py's vocabulary cell against this checkpoint."
+        )
+
     # build_seqparams_model_config comes from this file's own %run ./config —
-    # single source of truth shared with 04_train_models.py / 06_compare_models.py.
-    EXAMINATION_MODEL_CONFIG_SEQPARAMS = build_seqparams_model_config(EXAMINATION_MODEL_CONFIG)
+    # single source of truth shared with 04_train_models.py / 06_compare_models.py
+    # / 07_generate_synthetic_data.py. `spec=` makes it read the manifest.
+    EXAMINATION_MODEL_CONFIG_SEQPARAMS = build_seqparams_model_config(
+        EXAMINATION_MODEL_CONFIG, spec=_SPEC,
+    )
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = create_examination_model(EXAMINATION_MODEL_CONFIG_SEQPARAMS)
     # Lenient: tolerates params added since the checkpoint was trained (e.g.
@@ -180,18 +226,20 @@ else:
         target_secs) arrays, one value per sequence (finish-token span total,
         same convention as the existing post-train probe)."""
         conds, regions, seq_types, serials, triggers, tokens_list, targets = [], [], [], [], [], [], []
+        protocols = []
         for s in seqs:
             toks = s['sequence'][:model.max_seq_len - 1]
             if not toks:
                 continue
             conds.append(build_conditioning_tensor(
-                s['conditioning'], extra_feature_names=EXAMINATION_SEQPARAM_FEATURES,
+                s['conditioning'], extra_feature_names=EXTRA_FEATURES,
                 denylist=SUT_ALL_DENYLISTS,
             ))
             regions.append(s['body_region'])
             seq_types.append(int(s.get('sequence_type', 0)))
             serials.append(int(s.get('serial_idx', 0)))
             triggers.append(int(s.get('trigger_mode', 0)))
+            protocols.append(protocol_id(s.get('protocol_name'), PROTOCOL_VOCAB))
             tokens_list.append(toks)
             targets.append(sum(max(0.0, d) for d in s.get('durations', [])))
 
@@ -203,10 +251,15 @@ else:
         seq_types_t = torch.tensor(seq_types, dtype=torch.long)
         serials_t = torch.tensor(serials, dtype=torch.long)
         triggers_t = torch.tensor(triggers, dtype=torch.long)
+        protocols_t = torch.tensor(protocols, dtype=torch.long)
 
         if shuffle_field is not None:
-            if shuffle_field in EXAMINATION_SEQPARAM_FEATURES:
-                col = 10 + EXAMINATION_SEQPARAM_FEATURES.index(shuffle_field)
+            if shuffle_field in EXTRA_FEATURES:
+                # 10 = the fixed base conditioning block (Age, Weight, Height,
+                # PTAB, Direction, hour/dow sin/cos, is_morning) that
+                # build_conditioning_tensor always writes first; the extras
+                # follow it in EXTRA_FEATURES order.
+                col = 10 + EXTRA_FEATURES.index(shuffle_field)
                 perm = torch.tensor(rng.permutation(len(conds)))
                 conds_t[:, col] = conds_t[perm, col]
             elif shuffle_field == 'sequence_type':
@@ -221,6 +274,9 @@ else:
             elif shuffle_field == 'body_region':
                 perm = rng.permutation(len(conds))
                 regions_t = regions_t[perm]
+            elif shuffle_field == 'protocol':
+                perm = rng.permutation(len(conds))
+                protocols_t = protocols_t[perm]
 
         preds = []
         with torch.no_grad():
@@ -232,6 +288,7 @@ else:
                     'sequence_type': seq_types_t[i:i+1].to(device),
                     'serial_idx': serials_t[i:i+1].to(device),
                     'trigger_mode': triggers_t[i:i+1].to(device),
+                    'protocol': protocols_t[i:i+1].to(device),
                 }
                 mu, _ = model.estimate_durations(inp, conds_t[i:i+1].to(device), info)
                 m = mu[0, len(toks) - 1].item()
@@ -239,18 +296,59 @@ else:
                 preds.append(pred_sec)
         return np.array(preds), np.array(targets)
 
-    baseline_preds, targets = _predicted_seconds(val_sequences)
+    # --- how many sequences this sweep can actually afford -----------------
+    # _predicted_seconds runs ONE forward pass per sequence (batch size 1,
+    # because held-out sequences have different lengths), and the sweep runs it
+    # once per feature per repeat. That was fine when the feature list was
+    # TR + num_slices: 2 features x 5 repeats x ~4,000 sequences.
+    #
+    # PARAM_SET='all' made the list 133 features, and the same sweep is
+    # 138 x 5 x 3,956 = 2.7M forward passes — hours on a T4, days on CPU. The
+    # notebook did not get slower, the feature list got 60x longer, and nothing
+    # here was ever re-sized for it.
+    #
+    # So the sweep runs on a deterministic SUBSET, and prints what it cost so
+    # the trade is visible rather than assumed. Set PERM_N=0 for the full
+    # held-out set when there is time for it. The proper fix is to batch the
+    # forward passes with a PAD key-padding mask (estimate_durations already
+    # supports it) — that is a change to how predictions are computed, and it
+    # does not belong in the same pass as a load-bearing correctness fix.
+    PERM_N = int(os.environ.get('PERM_N', 500))
+    PERM_REPEATS = int(os.environ.get('PERM_REPEATS', 5))
+
+    perm_sequences = val_sequences
+    if PERM_N and len(val_sequences) > PERM_N:
+        # Evenly spaced, not the first N: val_sequences is in TEMPORAL order,
+        # so a head slice would be one day of one subset of scanners.
+        _stride = len(val_sequences) / PERM_N
+        perm_sequences = [val_sequences[int(i * _stride)] for i in range(PERM_N)]
+        print(f"Permutation sweep on {len(perm_sequences):,} of "
+              f"{len(val_sequences):,} held-out sequences (PERM_N={PERM_N}; "
+              f"set PERM_N=0 for all of them).")
+
+    baseline_preds, targets = _predicted_seconds(perm_sequences)
     baseline_mae = np.mean(np.abs(baseline_preds - targets))
     print(f"Baseline MAE (no shuffle): {baseline_mae:.1f}s over {len(targets)} sequences")
 
-    feature_names = ['sequence_type', 'serial_idx', 'trigger_mode', 'body_region'] + list(EXAMINATION_SEQPARAM_FEATURES)
-    n_repeats = 5
+    # 'protocol' leads because it is the channel this checkpoint was retrained
+    # for, and because its rank is the cheapest check that the ids are actually
+    # arriving: duration_protocol_bias is a trained per-position embedding, so a
+    # near-zero degradation here means the wiring is broken, not that the
+    # protocol is uninformative.
+    feature_names = (
+        ['protocol', 'sequence_type', 'serial_idx', 'trigger_mode', 'body_region']
+        + list(EXTRA_FEATURES)
+    )
+    n_repeats = PERM_REPEATS
+    print(f"Sweeping {len(feature_names):,} features x {n_repeats} repeats x "
+          f"{len(perm_sequences):,} sequences = "
+          f"{len(feature_names) * n_repeats * len(perm_sequences):,} forward passes.")
     results = []
     for name in feature_names:
         degradations = []
         for rep in range(n_repeats):
             rng = np.random.default_rng(rep)
-            preds, _ = _predicted_seconds(val_sequences, shuffle_field=name, rng=rng)
+            preds, _ = _predicted_seconds(perm_sequences, shuffle_field=name, rng=rng)
             mae = np.mean(np.abs(preds - targets))
             degradations.append(mae - baseline_mae)
         mean_degradation = float(np.mean(degradations))

@@ -20,27 +20,39 @@
 
 import os
 import sys
+import json
 import math
 import pickle
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import numpy as np
 import torch
 
-_AP_PATH = "/tmp/alternating_pipeline_src"  # matches 04_train_models.py's TMP_ROOT
-if _AP_PATH not in sys.path:
-    sys.path.insert(0, _AP_PATH)
+# THIS NOTEBOOK BOOTSTRAPS ITS OWN SOURCE. It used to sys.path.insert
+# /tmp/alternating_pipeline_src and import — a directory only 04_train_models.py
+# ever populates. On 2026-08-21 that failed reporting every module missing,
+# after a training run that had itself succeeded: 04 ran on a GPU cluster, this
+# did not, and /tmp is per-machine. A notebook that depends on another
+# notebook's side effect in /tmp is not reproducible.
+#
+# bootstrap_pipeline_source() comes from `%run ./config` above, which is always
+# loaded fresh from the Workspace. It is idempotent and refreshes itself.
+REPO_ROOT = bootstrap_pipeline_source()
 
-# This notebook does not copy the source itself — 04_train_models.py does, and
-# /tmp survives the whole cluster lifetime. Fail with instructions if that copy
-# predates a module this notebook needs. (assert_pipeline_source_fresh comes
-# from `%run ./config` above, which is always loaded fresh from the Workspace.)
-assert_pipeline_source_fresh(_AP_PATH, required_modules=[
+
+# Post-condition on what the bootstrap actually produced. The refresh above
+# WARNS rather than fails when `git fetch` cannot reach the network, so an
+# offline cluster keeps working — at the cost of possibly running an old commit.
+# This is what turns that into one readable line instead of a bare
+# ModuleNotFoundError deep inside the run. purge=False: the bootstrap has just
+# pinned these modules on purpose.
+assert_pipeline_source_fresh(REPO_ROOT, purge=False, required_modules=[
     "AlternatingPipeline.config",
     "AlternatingPipeline.models.examination_model",
     "AlternatingPipeline.models.checkpoint_compat",
     "AlternatingPipeline.training.utils",
     "AlternatingPipeline.validation.metrics",
+    "AlternatingPipeline.data.protocol_vocab",
 ])
 
 from AlternatingPipeline.config import (
@@ -53,6 +65,7 @@ from AlternatingPipeline.models.checkpoint_compat import (
 )
 from AlternatingPipeline.training.utils import temporal_split, build_conditioning_tensor
 from AlternatingPipeline.validation.metrics import compare_real_vs_predicted, print_comparison_report
+from AlternatingPipeline.data.protocol_vocab import RARE_PROTOCOL_ID, protocol_id
 
 # Baseline (pre-SUT) examination checkpoint. Overridable so an ABLATION
 # checkpoint — same code, same pkl, same split, use_sut_conditioning=False —
@@ -120,9 +133,56 @@ if old_model is None:
     print("   csv_pipeline_seqparams/04_train_models.py with use_sut_conditioning=False,")
     print("   which isolates the SUT features as the only difference.")
 
+# --- the checkpoint's own manifest is the authority for its architecture ----
+# NOT config.py. Sharing build_seqparams_model_config across 04/05/06/07 makes
+# the four agree with each other; it says nothing about agreeing with a
+# checkpoint written an hour ago. On 2026-08-21 config.py's rare-field floor
+# moved 1.0 -> 0.0 between training and analysis, admitting 37 more parameters,
+# and every notebook here tried to load a 277-dim checkpoint into a 351-dim
+# model. Reading the manifest removes the class of failure, not just that case.
+_SPEC = load_trained_model_spec(f"{MODELS_DIR}/MODEL_MANIFEST.json")
+if _SPEC is None:
+    print(f"!! No usable MODEL_MANIFEST.json at {MODELS_DIR} — falling back to config.py's "
+          f"feature list. If the checkpoint was trained under a different feature "
+          f"selection this will fail with a shape mismatch. Re-run 04's manifest cell.")
+    EXTRA_FEATURES = list(EXAMINATION_SEQPARAM_FEATURES)
+else:
+    EXTRA_FEATURES = list(_SPEC.extra_conditioning_features)
+    print(f"Conditioning pinned to {_SPEC.path}: {len(EXTRA_FEATURES)} extra features, "
+          f"base_conditioning_dim={_SPEC.base_conditioning_dim}, "
+          f"num_protocols={_SPEC.num_protocols}")
+
+# --- the protocol vocabulary the checkpoint's embedding rows are indexed by --
+# 04_train_models.py freezes this next to the checkpoint precisely so this
+# notebook does not rebuild it from a pkl: rebuilding is only identical while
+# the pkl is byte-for-byte the same, and a silent mismatch makes every protocol
+# predict some other protocol's duration.
+#
+# NOT OPTIONAL. Without it `body_region_info['protocol']` is absent and
+# sequence_generator falls back to RARE_PROTOCOL_ID for every row — the model
+# loads cleanly and every number below is measured with its strongest input
+# tied off (protocol explains 76.3% of held-out duration variance against
+# sequence_type's 18.7%).
+_VOCAB_PATH = f"{MODELS_DIR}/examination/protocol_vocab.json"
+try:
+    with open(_VOCAB_PATH) as _vf:
+        PROTOCOL_VOCAB = json.load(_vf)["vocab"]
+    print(f"Protocol vocabulary: {len(PROTOCOL_VOCAB):,} protocols from {_VOCAB_PATH}")
+except (OSError, ValueError, KeyError) as _err:
+    raise RuntimeError(
+        f"Cannot read the protocol vocabulary at {_VOCAB_PATH} ({_err}). The checkpoint "
+        f"carries protocol_embedding / duration_protocol_bias rows indexed by it, and "
+        f"without it every held-out prediction below would use RARE_PROTOCOL_ID — "
+        f"measuring a model with its strongest input disconnected. Re-run "
+        f"04_train_models.py's vocabulary cell against this checkpoint."
+    )
+
 # build_seqparams_model_config comes from this file's own %run ./config —
-# single source of truth shared with 04_train_models.py / 05_feature_analysis.py.
-EXAMINATION_MODEL_CONFIG_SEQPARAMS = build_seqparams_model_config(EXAMINATION_MODEL_CONFIG)
+# single source of truth shared with 04_train_models.py / 05_feature_analysis.py
+# / 07_generate_synthetic_data.py. `spec=` makes it read the manifest.
+EXAMINATION_MODEL_CONFIG_SEQPARAMS = build_seqparams_model_config(
+    EXAMINATION_MODEL_CONFIG, spec=_SPEC,
+)
 new_model = create_examination_model(EXAMINATION_MODEL_CONFIG_SEQPARAMS)
 load_checkpoint_lenient(
     new_model,
@@ -141,7 +201,7 @@ print(f"New model params: {sum(p.numel() for p in new_model.parameters()):,}")
 # Predict with both models on every held-out sequence
 # =============================================================================
 
-def _predict_one(model, seq, extra_features):
+def _predict_one(model, seq, extra_features, protocol_vocab=None):
     toks = seq['sequence'][:model.max_seq_len - 1]
     if not toks:
         return None
@@ -155,6 +215,13 @@ def _predict_one(model, seq, extra_features):
         'sequence_type': torch.tensor([int(seq.get('sequence_type', 0))], device=device),
         'serial_idx': torch.tensor([int(seq.get('serial_idx', 0))], device=device),
         'trigger_mode': torch.tensor([int(seq.get('trigger_mode', 0))], device=device),
+        # Passed for BOTH models. The baseline has no protocol_embedding, so
+        # sequence_generator ignores the key entirely (hasattr guard) — the
+        # comparison stays honest about the old model genuinely lacking the
+        # channel, rather than being handicapped by this notebook.
+        'protocol': torch.tensor(
+            [protocol_id(seq.get('protocol_name'), protocol_vocab or {})], device=device
+        ),
     }
     with torch.no_grad():
         mu, _ = model.estimate_durations(inp, cond, info)
@@ -164,12 +231,14 @@ def _predict_one(model, seq, extra_features):
 
 rows = []
 for seq in val_sequences:
-    new_pred = _predict_one(new_model, seq, extra_features=EXAMINATION_SEQPARAM_FEATURES)
+    new_pred = _predict_one(new_model, seq, extra_features=EXTRA_FEATURES,
+                            protocol_vocab=PROTOCOL_VOCAB)
     if new_pred is None:
         continue
     # old model: 10-dim conditioning, ignores the extra SUT keys
     old_pred = (
-        _predict_one(old_model, seq, extra_features=None)
+        _predict_one(old_model, seq, extra_features=None,
+                     protocol_vocab=PROTOCOL_VOCAB)
         if old_model is not None else None
     )
     if old_model is not None and old_pred is None:
@@ -212,8 +281,10 @@ def _probe_delta(seqs, make_a, make_b):
     """Mean/max |prediction delta| between two mutations of the same sequences."""
     deltas = []
     for _s in seqs:
-        _pa = _predict_one(new_model, make_a(_s), extra_features=EXAMINATION_SEQPARAM_FEATURES)
-        _pb = _predict_one(new_model, make_b(_s), extra_features=EXAMINATION_SEQPARAM_FEATURES)
+        _pa = _predict_one(new_model, make_a(_s), extra_features=EXTRA_FEATURES,
+                           protocol_vocab=PROTOCOL_VOCAB)
+        _pb = _predict_one(new_model, make_b(_s), extra_features=EXTRA_FEATURES,
+                           protocol_vocab=PROTOCOL_VOCAB)
         if _pa is None or _pb is None:
             continue
         deltas.append(abs(_pa - _pb))
@@ -226,7 +297,7 @@ def _scale_sut(factor):
     """Mutation that multiplies every SUT feature by `factor`."""
     def _mutate(seq):
         cond = dict(seq.get('conditioning', {}))
-        for name in EXAMINATION_SEQPARAM_FEATURES:
+        for name in EXTRA_FEATURES:
             cond[name] = float(cond.get(name, 0.0) or 0.0) * factor
         return {**seq, 'conditioning': cond}
     return _mutate
@@ -237,17 +308,18 @@ def _force(**overrides):
     return lambda seq: {**seq, **overrides}
 
 
-if not EXAMINATION_SEQPARAM_FEATURES:
-    print("  SKIPPED — EXAMINATION_SEQPARAM_FEATURES is still empty (placeholder). "
+if not EXTRA_FEATURES:
+    print("  SKIPPED — the conditioning feature list is empty (placeholder). "
           "Run sut_parameter_discovery.py and retrain before this criterion is meaningful.")
     criterion_1_pass = None
 else:
     _nonzero = [
         s for s in val_sequences
         if any(float(s.get('conditioning', {}).get(n, 0) or 0) > 0
-               for n in EXAMINATION_SEQPARAM_FEATURES)
+               for n in EXTRA_FEATURES)
     ]
-    print(f"  Held-out sequences with a non-zero {EXAMINATION_SEQPARAM_FEATURES}: "
+    print(f"  Held-out sequences with a non-zero value in any of the "
+          f"{len(EXTRA_FEATURES)} SUT features: "
           f"{len(_nonzero):,}/{len(val_sequences):,}")
     if not _nonzero:
         print("  FAIL — no held-out sequence carries a non-zero value. The features never "
@@ -258,8 +330,9 @@ else:
             _nonzero[:PROBE_N], _scale_sut(1.0), _scale_sut(3.0)
         )
         criterion_1_pass = _sut_mean > 0.5  # half a second — well above float noise
-        print(f"  Perturbing {EXAMINATION_SEQPARAM_FEATURES} 3x over {_sut_n} sequences moved "
-              f"the prediction by mean {_sut_mean:.3f}s (max {_sut_max:.3f}s)")
+        print(f"  Perturbing all {len(EXTRA_FEATURES)} SUT features 3x over {_sut_n} "
+              f"sequences moved the prediction by mean {_sut_mean:.3f}s "
+              f"(max {_sut_max:.3f}s)")
         print(f"  {'PASS' if criterion_1_pass else 'FAIL — STOP, do not trust criteria below'}")
 
 # COMMAND ----------
@@ -302,12 +375,41 @@ _channel_probes = [
      _force(serial_idx=0), _force(serial_idx=1),
      "conditioning token only"),
 ]
-if EXAMINATION_SEQPARAM_FEATURES:
+if EXTRA_FEATURES:
     _channel_probes.append((
-        f"{'+'.join(EXAMINATION_SEQPARAM_FEATURES)} (1x vs 3x)",
+        f"all {len(EXTRA_FEATURES)} SUT features (1x vs 3x)",
         _scale_sut(1.0), _scale_sut(3.0),
         "conditioning token only",
     ))
+
+# PROTOCOL — the second per-position channel, and the one the retrain was for.
+# It reaches the duration encoder through duration_protocol_bias at every token
+# position, the same route that makes sequence_type the positive control above,
+# so it should move the head HARD. If it does not, the ids are not arriving:
+# check protocol_vocab.json against the checkpoint before reading any MAE.
+#
+# The two names probed are the most frequent in the held-out split that resolve
+# to DIFFERENT vocabulary ids — picked from the data rather than hardcoded, so
+# this cannot silently degenerate into comparing a protocol against itself (the
+# failure that made the original single-sequence criterion 1 meaningless).
+_proto_counts = Counter(
+    protocol_id(_s.get('protocol_name'), PROTOCOL_VOCAB) for _s in val_sequences
+)
+_proto_top = [pid for pid, _ in _proto_counts.most_common() if pid != RARE_PROTOCOL_ID][:2]
+if len(_proto_top) == 2:
+    _id_to_name = {}
+    for _s in val_sequences:
+        _pid = protocol_id(_s.get('protocol_name'), PROTOCOL_VOCAB)
+        _id_to_name.setdefault(_pid, _s.get('protocol_name'))
+    _pa_name, _pb_name = _id_to_name[_proto_top[0]], _id_to_name[_proto_top[1]]
+    _channel_probes.append((
+        f"protocol ({_pa_name} vs {_pb_name})",
+        _force(protocol_name=_pa_name), _force(protocol_name=_pb_name),
+        "per-position bias + cond token",
+    ))
+else:
+    print(f"  (protocol probe skipped — the held-out split carries "
+          f"{len(_proto_top)} non-rare protocol id(s), need 2)")
 
 _channel_results = {}
 for _label, _mk_a, _mk_b, _path in _channel_probes:
@@ -317,7 +419,31 @@ for _label, _mk_a, _mk_b, _path in _channel_probes:
 
 _control_label = _channel_probes[0][0]
 _control = _channel_results.get(_control_label, 0.0)
-_cond_only = [v for k, v in _channel_results.items() if k != _control_label]
+
+# Select the cond-token-only channels BY THEIR PATH, not by "everything except
+# the control". protocol also has a per-position route (duration_protocol_bias),
+# so a live protocol would otherwise mask a dead conditioning token and turn
+# this diagnostic into the opposite of what it is for.
+_cond_only_labels = {_lbl for _lbl, _, _, _pth in _channel_probes
+                     if _pth.startswith("conditioning token only")}
+_cond_only = [v for k, v in _channel_results.items() if k in _cond_only_labels]
+
+# Protocol gets its own verdict, because a null here has exactly one cause and
+# it is not a modelling one: duration_protocol_bias is a trained per-position
+# embedding, so if switching between the two most common held-out protocols
+# does not move the head, the ids are not reaching the model at all and every
+# MAE below is measured on a crippled model.
+_proto_label = next((l for l in _channel_results if l.startswith("protocol (")), None)
+if _proto_label is not None:
+    _proto_delta = _channel_results[_proto_label]
+    if _proto_delta < 1.0:
+        print(f"\n  >> PROTOCOL CHANNEL IS NOT ARRIVING ({_proto_delta:.3f}s). STOP.")
+        print("     duration_protocol_bias is per-position and trained, so this cannot be "
+              "a weak-signal result. Check that protocol_vocab.json matches this "
+              "checkpoint and that _predict_one is passing 'protocol'.")
+    else:
+        print(f"\n  Protocol channel is live ({_proto_delta:.1f}s) — the ids are reaching "
+              f"the duration head.")
 
 print()
 if _control < 1.0:
@@ -354,6 +480,28 @@ new_preds = np.array([r['new_pred_s'] for r in rows])
 new_mae = np.mean(np.abs(new_preds - targets))
 new_mape = np.mean(np.abs(new_preds - targets) / np.maximum(targets, 1.0)) * 100
 print(f"  New MAE:  {new_mae:.1f}s  (MAPE {new_mape:.1f}%)")
+
+# THE ACCEPTANCE NUMBER. Step 04's protocol gate measured a per-protocol group
+# mean held out and stamped it into the manifest, with the explicit warning that
+# beating the previous CHECKPOINT is not sufficient — a model can ignore a new
+# input entirely and still look improved, which is exactly what happened with
+# TR/num_slices. This is the comparison that decides whether the retrain earned
+# anything, and it belongs next to the MAE rather than in a training log
+# Databricks drops on long runs.
+if _SPEC is not None and _SPEC.protocol_baseline_mae_s > 0:
+    _bar = _SPEC.protocol_baseline_mae_s
+    print(f"  Protocol-mean baseline (step 04 gate, R2 {_SPEC.protocol_heldout_r2_pct:.1f}%): "
+          f"{_bar:.1f}s")
+    if new_mae <= _bar:
+        print(f"  >> BEATS THE BAR by {_bar - new_mae:.1f}s. The model has learned something "
+              f"a per-protocol lookup table does not know.")
+    else:
+        print(f"  >> DOES NOT BEAT THE BAR ({new_mae - _bar:+.1f}s). A protocol lookup table "
+              f"is still the better predictor; the model is not yet worth its complexity "
+              f"on this metric.")
+else:
+    print("  Protocol-mean baseline: not in the manifest — re-run 04's manifest cell to "
+          "record the bar this run must clear.")
 
 mae_improvement_pct = None
 if old_model is not None:

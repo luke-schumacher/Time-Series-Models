@@ -1,6 +1,8 @@
 import contextlib
 import importlib.util
+import json
 import os
+import tempfile
 import unittest
 
 
@@ -546,6 +548,31 @@ class StepDefinitionTests(unittest.TestCase):
         source = self._read('07_generate_synthetic_data.py')
         self.assertIn("serial_embedding.weight", source)
 
+    def test_generation_clamps_serial_idx_to_the_checkpoint_not_a_constant(self):
+        """The OTHER half of PR #59, in BOTH pipelines.
+
+        Deriving num_serials fixes how the model is BUILT. The generation loop
+        separately decides which embedding row each synthetic scanner uses, and
+        both pipelines clamped that against AlternatingPipeline.config's
+        hardcoded NUM_SERIALS=10 — csv_pipeline's step 04 does set
+        `_ap_cfg.NUM_SERIALS`, but that runs in a different notebook session and
+        does not survive into generation.
+
+        At 10 serials the two agree and it is invisible. At 21 the model gets a
+        [21, 16] embedding while the loop routes customers 11-21 all to serial 9:
+        eleven scanners sharing one identity, eleven trained rows unused, and no
+        error anywhere.
+        """
+        for relative in (('csv_pipeline_seqparams', '07_generate_synthetic_data.py'),
+                         ('csv_pipeline', '05_generate_synthetic_data.py')):
+            with self.subTest(notebook='/'.join(relative)):
+                path = os.path.join(
+                    os.path.dirname(os.path.dirname(_CONFIG_PATH)), *relative)
+                with open(path) as f:
+                    source = f.read()
+                self.assertIn('EXAM_NUM_SERIALS - 1', source)
+                self.assertNotIn('min(customer_idx, NUM_SERIALS - 1)', source)
+
     def test_step_07_still_uses_the_lenient_loader(self):
         # Deriving num_serials removes the KNOWN mismatch. The lenient loader is
         # what catches the next one — it refuses a checkpoint from a different
@@ -646,6 +673,189 @@ class ModelConfigAssemblyTests(unittest.TestCase):
 
         self.assertEqual(base['base_conditioning_dim'], 10)  # untouched
         self.assertEqual(base['conditioning_scale'], [1.0] * 10)  # untouched
+
+
+class TrainedModelSpecTests(unittest.TestCase):
+    """The serving path must take its architecture from the CHECKPOINT.
+
+    2026-08-21: a finished GPU training run could not be analysed or generated
+    from. Nothing on disk had changed — config.py had. SEQPARAM_MIN_PRESENCE_PCT
+    moved 1.0 -> 0.0, admitting 37 more parameters, and steps 05/06/07 each
+    rebuilt the conditioning list from the live config and tried to load a
+    277-dim checkpoint into a 351-dim model. PyTorch raises on that regardless
+    of `strict`.
+
+    All four notebooks already shared build_seqparams_model_config, so sharing
+    was never the missing piece: it makes the four agree with each other, not
+    with a checkpoint written an hour earlier. Only the manifest can do that.
+    """
+
+    def _write_manifest(self, tmpdir, **overrides):
+        payload = {
+            'extra_conditioning_features': ['TR', 'num_slices', 'TR__present'],
+            'base_conditioning_dim': 13,
+            'num_protocols': 1620,
+            'num_trigger_modes': 6,
+            'param_set': 'all',
+            'presence_flags': True,
+            'divisor_fingerprint': 'abc123',
+            'trained_at': '2026-08-21 08:06:09',
+            'protocol_baseline_mae_s': 16.19,
+            'protocol_heldout_r2_pct': 76.32,
+        }
+        payload.update(overrides)
+        path = os.path.join(tmpdir, 'MODEL_MANIFEST.json')
+        with open(path, 'w') as handle:
+            json.dump(payload, handle)
+        return path
+
+    def test_spec_pins_the_width_against_a_wider_live_config(self):
+        module = _load_seqparams_config()
+        base = {'base_conditioning_dim': 10, 'conditioning_scale': [1.0] * 10}
+        # The live config has moved on and admits more fields than the
+        # checkpoint ever saw — the exact 2026-08-21 shape.
+        module.EXAMINATION_SEQPARAM_FEATURES = [
+            'TR', 'num_slices', 'TR__present', 'PDM', 'SAT', 'TE2',
+        ]
+        module.EXAMINATION_SEQPARAM_SCALE = [1.0] * 6
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec = module.load_trained_model_spec(self._write_manifest(tmpdir))
+            result = module.build_seqparams_model_config(base, spec=spec)
+
+        self.assertEqual(result['base_conditioning_dim'], 13)
+        self.assertEqual(len(result['conditioning_scale']), 13)
+        # And without the spec it would have built the model the checkpoint
+        # cannot load — which is the failure this exists to prevent.
+        self.assertEqual(
+            module.build_seqparams_model_config(base)['base_conditioning_dim'], 16
+        )
+
+    def test_spec_restores_num_protocols(self):
+        """The quiet half of the same bug.
+
+        A shape mismatch stops the run. num_protocols going missing does not:
+        the model is simply built without protocol_embedding /
+        protocol_cond_proj / duration_protocol_bias, the checkpoint's four
+        protocol tensors are dropped as 'unexpected', and every prediction
+        falls back to RARE_PROTOCOL_ID. It loads cleanly and is wrong.
+        """
+        module = _load_seqparams_config()
+        base = {'base_conditioning_dim': 10, 'conditioning_scale': [1.0] * 10}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec = module.load_trained_model_spec(self._write_manifest(tmpdir))
+            result = module.build_seqparams_model_config(base, spec=spec)
+
+        self.assertEqual(result['num_protocols'], 1620)
+        self.assertNotIn('num_protocols', module.build_seqparams_model_config(base))
+
+    def test_a_forgotten_divisor_does_not_block_a_valid_checkpoint(self):
+        """Serving is lenient about scales on purpose.
+
+        conditioning_scale is a persistent buffer, so load_state_dict overwrites
+        every entry with the trained value. Only the LENGTH matters at build
+        time — refusing to serve over a number that is about to be discarded
+        would be the wrong trade.
+        """
+        module = _load_seqparams_config()
+        base = {'base_conditioning_dim': 10, 'conditioning_scale': [1.0] * 10}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec = module.load_trained_model_spec(self._write_manifest(
+                tmpdir,
+                extra_conditioning_features=['TR', 'A_FIELD_THE_TABLE_FORGOT'],
+                base_conditioning_dim=12,
+            ))
+            result = module.build_seqparams_model_config(base, spec=spec)
+
+        self.assertEqual(len(result['conditioning_scale']), 12)
+        # Training stays strict — an unscaled feature there is a real error.
+        with self.assertRaises(ValueError):
+            module.seqparam_scale_for(['A_FIELD_THE_TABLE_FORGOT'], strict=True)
+
+    def test_an_internally_inconsistent_manifest_is_refused(self):
+        module = _load_seqparams_config()
+        base = {'base_conditioning_dim': 10, 'conditioning_scale': [1.0] * 10}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec = module.load_trained_model_spec(self._write_manifest(
+                tmpdir, base_conditioning_dim=999,
+            ))
+            with self.assertRaises(ValueError) as ctx:
+                module.build_seqparams_model_config(base, spec=spec)
+
+        self.assertIn('999', str(ctx.exception))
+
+    def test_absent_or_incomplete_manifest_falls_back_instead_of_crashing(self):
+        """Fail soft, matching _load_divisor_table.
+
+        This module is %run by every notebook and imported by this suite, so it
+        cannot require a /dbfs artefact. A manifest predating either key cannot
+        pin anything, and guessing from a partial one is worse than falling back
+        to config.py in the open.
+        """
+        module = _load_seqparams_config()
+        self.assertIsNone(module.load_trained_model_spec('/nonexistent/MANIFEST.json'))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            partial = os.path.join(tmpdir, 'MODEL_MANIFEST.json')
+            with open(partial, 'w') as handle:
+                json.dump({'trained_at': '2026-08-21', 'val_loss': -0.38}, handle)
+            self.assertIsNone(module.load_trained_model_spec(partial))
+
+            corrupt = os.path.join(tmpdir, 'corrupt.json')
+            with open(corrupt, 'w') as handle:
+                handle.write('{not json')
+            self.assertIsNone(module.load_trained_model_spec(corrupt))
+
+    def test_drift_report_names_the_fields_that_moved(self):
+        """A shape error says a number changed. This has to say what and why."""
+        module = _load_seqparams_config()
+        module.EXAMINATION_SEQPARAM_FEATURES = [
+            'TR', 'num_slices', 'TR__present', 'PDM', 'SAT',
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec = module.load_trained_model_spec(self._write_manifest(tmpdir))
+            report = module.describe_spec_drift(spec)
+
+        self.assertIn('PDM', report)
+        self.assertIn('SAT', report)
+        self.assertIn('checkpoint', report.lower())
+
+    def test_no_drift_report_when_the_two_agree(self):
+        module = _load_seqparams_config()
+        module.EXAMINATION_SEQPARAM_FEATURES = ['TR', 'num_slices', 'TR__present']
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec = module.load_trained_model_spec(self._write_manifest(tmpdir))
+            self.assertEqual(module.describe_spec_drift(spec), '')
+
+    def test_spec_carries_the_acceptance_bar(self):
+        """06 prints the bar next to the MAE rather than leaving it to a log.
+
+        Databricks drops cell output on long runs, so 'the gate said 16.2s' is
+        not reliably recoverable after the fact.
+        """
+        module = _load_seqparams_config()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            spec = module.load_trained_model_spec(self._write_manifest(tmpdir))
+        self.assertAlmostEqual(spec.protocol_baseline_mae_s, 16.19)
+        self.assertAlmostEqual(spec.protocol_heldout_r2_pct, 76.32)
+
+    def test_step_04_is_unaffected_by_the_new_parameter(self):
+        """Training defines a new architecture, so config.py IS the authority
+        there. The spec parameter must be strictly opt-in."""
+        module = _load_seqparams_config()
+        base = {'base_conditioning_dim': 10, 'conditioning_scale': [1.0] * 10}
+        module.EXAMINATION_SEQPARAM_FEATURES = ['TR', 'num_slices']
+        module.EXAMINATION_SEQPARAM_SCALE = [1000.0, 30.0]
+
+        result = module.build_seqparams_model_config(base)
+
+        self.assertEqual(result['base_conditioning_dim'], 12)
+        self.assertEqual(result['conditioning_scale'][10:], [1000.0, 30.0])
 
 
 if __name__ == '__main__':

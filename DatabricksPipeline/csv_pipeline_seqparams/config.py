@@ -1495,6 +1495,42 @@ def _divisor_for(name):
     )
 
 
+def seqparam_scale_for(feature_names, strict=True):
+    """Per-feature conditioning divisors for `feature_names`, in order.
+
+    STRICT is the training contract: a selected feature with no divisor is a
+    configuration error and must stop the run, because an unscaled
+    large-magnitude numeric erases the categorical conditioning through
+    LayerNorm (see the note above SEQPARAM_CANDIDATES).
+
+    LENIENT (`strict=False`) is the SERVING contract, and the difference is
+    load-bearing rather than a convenience. A served model rebuilds this list
+    from the name list its CHECKPOINT was trained on, which may contain fields
+    the current divisor table no longer knows — a rebuilt table, a different
+    PARAM_SET, a corpus that stopped emitting a field. Raising there would
+    refuse to serve a perfectly good checkpoint over a number that is about to
+    be discarded anyway: `conditioning_scale` is a persistent buffer, so
+    load_state_dict overwrites every entry with the trained value. Only the
+    LENGTH has to be right, which is exactly what this guarantees.
+    """
+    scale = []
+    for name in feature_names:
+        # Flags are already 0/1, so their divisor is the identity. Giving them a
+        # p99-derived one would rescale a boolean and make "absent" a nonzero
+        # value.
+        if is_presence_name(name):
+            scale.append(1.0)
+            continue
+        if strict:
+            scale.append(_divisor_for(name))
+            continue
+        try:
+            scale.append(_divisor_for(name))
+        except ValueError:
+            scale.append(1.0)
+    return scale
+
+
 def _missing_default_for(name):
     """Value written when a field is absent from the message.
 
@@ -1537,12 +1573,9 @@ else:
 EXAMINATION_SEQPARAM_FEATURES = (
     _selected_values + _selected_flags + _selected_derived
 )
-EXAMINATION_SEQPARAM_SCALE = [
-    # Flags are already 0/1, so their divisor is the identity. Giving them a
-    # p99-derived one would rescale a boolean and make "absent" a nonzero value.
-    1.0 if is_presence_name(name) else _divisor_for(name)
-    for name in EXAMINATION_SEQPARAM_FEATURES
-]
+EXAMINATION_SEQPARAM_SCALE = seqparam_scale_for(
+    EXAMINATION_SEQPARAM_FEATURES, strict=True
+)
 
 # What step 03 writes into every row's 'conditioning' — the union of every set,
 # not just the selected one, plus a flag per value and the derived features.
@@ -1691,6 +1724,205 @@ if _unwritten:
     )
 
 # ============================================================================
+# SOURCE BOOTSTRAP — how a notebook gets an importable AlternatingPipeline.
+#
+# THE FAILURE THIS REPLACES. Until 2026-08-21 there were three different
+# answers to that question in one pipeline:
+#
+#   04  copied the Workspace tree to /tmp/alternating_pipeline_src itself.
+#   05  and 06 did NOT copy anything — they sys.path.insert'd that same /tmp
+#       directory and imported, relying on 04 having run on the same machine.
+#   07  cloned the git repo to /tmp/tsm and imported from there.
+#
+# So 05 and 06 were the only two that could not stand on their own, and on
+# 2026-08-21 both died reporting EVERY module missing, after a training run
+# that had itself succeeded — 04 ran on a GPU cluster, the analysis did not,
+# and /tmp is per-machine. The guard below then misdiagnosed it as a stale
+# copy, because it had no way to tell "copied too early" from "never copied
+# here at all".
+#
+# A notebook that depends on another notebook's side effect in /tmp is not
+# reproducible. This function is the one answer: it is idempotent, it refreshes
+# itself, and it does not care what has or has not run before it.
+#
+# Lives in config.py because config.py is %run-loaded straight from the
+# Workspace by every notebook and is therefore always current — the same
+# reason assert_pipeline_source_fresh lives here.
+# ============================================================================
+
+PIPELINE_REPO_URL = "https://github.com/luke-schumacher/Time-Series-Models.git"
+PIPELINE_TMP_CLONE = "/tmp/tsm"
+
+# Order of preference for the import root. The git clone comes FIRST: the
+# Shared Workspace mount has been observed throwing Errno 5 on file reads, and
+# a half-readable repo is worse than no repo because it fails deep in an
+# import instead of here.
+PIPELINE_REPO_CANDIDATES = (
+    PIPELINE_TMP_CLONE,
+    "/Workspace/Repos/luke-schumacher/Time-Series-Models",
+)
+
+# Databricks auto-injects the notebook's parent folder onto sys.path, and that
+# folder is on the broken mount. Anything matching this is scrubbed.
+PIPELINE_BROKEN_PATH_MARKER = "Patient Exchange and Examination"
+
+# Pre-imported so each name lands in sys.modules pointing at the bootstrapped
+# root BEFORE Databricks's Workspace finder can intercept it.
+# The UNION of what 05, 06 and 07 need, not a per-notebook list. A notebook
+# that pre-imports only its own subset leaves the rest to be resolved later,
+# by which time the Workspace finder may have re-entered sys.path — and the
+# resulting module comes from the broken mount while everything else came from
+# the clone. Pinning all of them at once costs milliseconds and removes the
+# question.
+PIPELINE_PREIMPORT = (
+    "AlternatingPipeline",
+    "AlternatingPipeline.config",
+    "AlternatingPipeline.models",
+    "AlternatingPipeline.models.sequence_generator",
+    "AlternatingPipeline.models.examination_model",
+    "AlternatingPipeline.models.exchange_model",
+    "AlternatingPipeline.models.orchestration_model",
+    "AlternatingPipeline.models.checkpoint_compat",
+    "AlternatingPipeline.data",
+    "AlternatingPipeline.data.preprocessing",
+    "AlternatingPipeline.data.orchestration_preprocessing",
+    "AlternatingPipeline.data.protocol_vocab",
+    "AlternatingPipeline.data.protocol_sampling",
+    "AlternatingPipeline.data.sut_parameter_sampling",
+    "AlternatingPipeline.training",
+    "AlternatingPipeline.training.utils",
+    "AlternatingPipeline.validation",
+    "AlternatingPipeline.validation.metrics",
+)
+
+
+def is_healthy_repo(path):
+    """True when `path` is a repo root whose AlternatingPipeline is READABLE.
+
+    Existence is not enough. The Shared Workspace mount answers os.path.isfile
+    and then raises OSError on read, so the check has to actually touch bytes.
+    """
+    import os as _os
+
+    config_py = _os.path.join(path, "AlternatingPipeline", "config.py")
+    if not _os.path.isfile(config_py):
+        return False
+    try:
+        with open(config_py, "rb") as handle:
+            handle.read(64)
+        return True
+    except OSError:
+        return False
+
+
+def _purge_pipeline_modules():
+    """Evict every already-imported AlternatingPipeline module.
+
+    BY NAME and BY __file__, because each catches what the other misses:
+    AlternatingPipeline is a namespace package (no __init__.py), so its
+    top-level module object has `__file__ is None` and a __file__ check never
+    evicts it; and AlternatingPipeline/models/examination_model.py imports the
+    LEGACY TOP-LEVEL names `config` and `models.sequence_generator`, which no
+    AlternatingPipeline-prefixed name check can match.
+    """
+    import sys as _sys
+
+    for name, module in list(_sys.modules.items()):
+        module_file = (getattr(module, "__file__", None) or "").replace("\\", "/")
+        if (name == "config"
+                or name == "AlternatingPipeline"
+                or name.startswith("AlternatingPipeline.")
+                or name == "models" or name.startswith("models.")
+                or "/AlternatingPipeline/" in module_file):
+            del _sys.modules[name]
+
+
+def bootstrap_pipeline_source(
+    candidates=PIPELINE_REPO_CANDIDATES,
+    repo_url=PIPELINE_REPO_URL,
+    tmp_clone=PIPELINE_TMP_CLONE,
+    preimport=PIPELINE_PREIMPORT,
+    refresh=True,
+    verbose=True,
+    runner=None,
+):
+    """Make AlternatingPipeline importable, and return the root it came from.
+
+    Idempotent and self-sufficient — safe to call at the top of any notebook,
+    in any order, on a cluster where nothing else has run.
+
+    `refresh` re-fetches an existing /tmp clone, because /tmp survives the whole
+    cluster lifetime and would otherwise pin an arbitrarily old commit. A fetch
+    that FAILS is a warning, not an error: an offline cluster should still be
+    able to analyse a checkpoint with the source it already has, and the commit
+    it is running is printed either way.
+
+    `runner` is injectable so the git calls can be exercised in tests.
+    """
+    import os as _os
+    import shutil as _shutil
+    import subprocess as _subprocess
+    import sys as _sys
+
+    run = runner or _subprocess.check_call
+
+    _sys.path[:] = [p for p in _sys.path if PIPELINE_BROKEN_PATH_MARKER not in p]
+
+    if refresh and _os.path.isdir(_os.path.join(tmp_clone, ".git")) \
+            and is_healthy_repo(tmp_clone):
+        try:
+            run(["git", "-C", tmp_clone, "fetch", "--depth=1", "origin", "main"])
+            run(["git", "-C", tmp_clone, "checkout", "--detach", "FETCH_HEAD"])
+        except Exception as err:                      # noqa: BLE001 - see docstring
+            if verbose:
+                print(f"[bootstrap] WARNING: could not refresh {tmp_clone} ({err}). "
+                      f"Continuing with the commit already there.")
+
+    repo_root = next((p for p in candidates if is_healthy_repo(p)), None)
+    if repo_root is None:
+        if _os.path.isdir(tmp_clone):
+            _shutil.rmtree(tmp_clone, ignore_errors=True)
+        run(["git", "clone", "--depth", "1", "--branch", "main", repo_url, tmp_clone])
+        repo_root = tmp_clone
+        if not is_healthy_repo(repo_root):
+            raise RuntimeError(
+                f"Fresh clone at {repo_root} is still unreadable — "
+                f"{repo_root}/AlternatingPipeline/config.py cannot be opened."
+            )
+
+    if repo_root in _sys.path:
+        _sys.path.remove(repo_root)
+    _sys.path.insert(0, repo_root)
+
+    _purge_pipeline_modules()
+
+    import importlib as _importlib
+
+    _importlib.invalidate_caches()
+    for name in preimport:
+        module = _importlib.import_module(name)
+        if verbose:
+            print(f"  {name:<52} -> {getattr(module, '__file__', '<namespace pkg>')}")
+
+    import AlternatingPipeline as _ap
+
+    contaminated = [p for p in list(_ap.__path__)
+                    if PIPELINE_BROKEN_PATH_MARKER in p]
+    if contaminated or not any(repo_root in p for p in _ap.__path__):
+        raise RuntimeError(
+            f"AlternatingPipeline.__path__ is contaminated: {list(_ap.__path__)}. "
+            f"Expected entries under {repo_root}. A stale namespace package has "
+            f"survived the purge — restart Python (dbutils.library.restartPython()) "
+            f"and re-run from the top."
+        )
+
+    if verbose:
+        print(f"[bootstrap] REPO_ROOT = {repo_root}")
+        print(f"[bootstrap] AlternatingPipeline.__path__ = {list(_ap.__path__)}")
+    return repo_root
+
+
+# ============================================================================
 # STALE-SOURCE GUARD for the notebooks that IMPORT AlternatingPipeline from a
 # /tmp copy rather than copying it themselves.
 #
@@ -1749,17 +1981,51 @@ def assert_pipeline_source_fresh(
         # re-copy; without this a freshly-copied file can still be invisible.
         importlib.invalidate_caches()
 
+    # ABSENT is a different diagnosis from STALE, and conflating them sent the
+    # 2026-08-21 run chasing a git pull that could not have helped. A stale copy
+    # is missing SOME modules — the ones added since it was made. A copy that is
+    # missing EVERY module was never made on this machine at all: /tmp was
+    # wiped, the cluster restarted, or this notebook is running somewhere other
+    # than the one that ran step 04 (that run trained on a GPU cluster and the
+    # notebooks that failed reported a CPU device). No amount of pulling fixes
+    # that; something has to bootstrap source HERE.
+    if not _os.path.isdir(tmp_root):
+        raise RuntimeError(
+            f"No pipeline source at {tmp_root} — the directory does not exist.\n"
+            f"Nothing has bootstrapped AlternatingPipeline on THIS cluster. /tmp is "
+            f"per-machine and per-cluster-lifetime, so a copy made by another run, on "
+            f"another cluster, or before a restart is simply not here.\n"
+            f"Fix: call bootstrap_pipeline_source() at the top of this notebook — it "
+            f"clones/refreshes the repo itself and does not depend on any other "
+            f"notebook having run."
+        )
+
     missing = [
         dotted for dotted in required_modules
         if not _os.path.isfile(_os.path.join(tmp_root, *dotted.split(".")) + ".py")
     ]
+    if missing and len(missing) == len(list(required_modules)):
+        raise RuntimeError(
+            f"No pipeline source at {tmp_root} — the directory exists but contains "
+            f"none of {', '.join(missing)}.\n"
+            f"An empty or foreign directory, not a stale copy: a stale copy would "
+            f"still have the modules that predate it. Whatever made this path, it was "
+            f"not a completed source copy on this machine.\n"
+            f"Fix: call bootstrap_pipeline_source() at the top of this notebook — it "
+            f"clones/refreshes the repo itself and does not depend on any other "
+            f"notebook having run."
+        )
     if missing:
         raise RuntimeError(
-            f"Stale source copy at {tmp_root} — missing: {', '.join(missing)}.\n"
-            f"This directory was copied by 04_train_models.py before those modules "
-            f"existed, and /tmp persists for the whole cluster lifetime, so it never "
-            f"refreshes on its own.\n"
-            f"Fix:\n"
+            f"Stale source at {tmp_root} — missing: {', '.join(missing)}.\n"
+            f"The modules that DO exist there predate these, so this tree was made "
+            f"before they were added. /tmp persists for the whole cluster lifetime, "
+            f"so neither a step-04 copy nor a git clone under it refreshes on its own.\n"
+            f"If this is a bootstrapped CLONE: its `git fetch` failed (the bootstrap "
+            f"warns and continues on purpose, so an offline cluster can still work) "
+            f"and it is pinned to an old commit. Delete {tmp_root} and re-run this "
+            f"notebook's bootstrap cell.\n"
+            f"If this is 04_train_models.py's copy:\n"
             f"  1. Pull the Databricks Repos clone so it is on the latest commit.\n"
             f"  2. Re-run 04_train_models.py CELLS 1-2 ONLY (the _api_copy_py cell) — "
             f"do NOT run the training cell.\n"
@@ -1771,10 +2037,20 @@ def assert_pipeline_source_fresh(
 # ============================================================================
 # MODEL CONFIG ASSEMBLY — the single source of truth for combining
 # AlternatingPipeline.config.EXAMINATION_MODEL_CONFIG with this pipeline's
-# SUT additions. 04_train_models.py, 05_feature_analysis.py, and
-# 06_compare_models.py all call this instead of each re-deriving the same
-# dict, so a future config-key addition can't be forgotten in one of the
-# three and silently desync training from analysis/comparison.
+# SUT additions. 04_train_models.py, 05_feature_analysis.py,
+# 06_compare_models.py and 07_generate_synthetic_data.py all call this instead
+# of each re-deriving the same dict, so a future config-key addition can't be
+# forgotten in one of the four and silently desync training from
+# analysis/comparison/generation.
+#
+# ONE SHARED FUNCTION WAS NOT ENOUGH, which is the 2026-08-21 lesson. All four
+# notebooks did call it, and steps 05/06/07 still could not load the checkpoint
+# step 04 had just written — because they called it against a config.py that
+# had moved on since training. Sharing the assembly only guarantees the four
+# agree with EACH OTHER *right now*; it says nothing about agreeing with a
+# checkpoint written an hour ago. So the serving path takes its inputs from the
+# checkpoint's own manifest (load_trained_model_spec / TrainedModelSpec) and
+# uses config.py only as the fallback when no manifest exists.
 #
 # Takes the base config as a PARAMETER rather than importing it directly —
 # this module is %run-loaded by 02/03 before AlternatingPipeline necessarily
@@ -1782,20 +2058,202 @@ def assert_pipeline_source_fresh(
 # import has to happen in the caller, which then passes the result in here.
 # ============================================================================
 
-def build_seqparams_model_config(base_examination_config):
+class TrainedModelSpec(NamedTuple):
+    """What a MODEL_MANIFEST.json says the checkpoint next to it was built as.
+
+    Every field here is a FACT ABOUT A FILE ON DISK, which is why it outranks
+    config.py at serve time — config.py is only ever a default for the next
+    training run.
+    """
+
+    path: str
+    extra_conditioning_features: tuple
+    base_conditioning_dim: int
+    num_protocols: int
+    num_trigger_modes: int
+    param_set: str
+    presence_flags: bool
+    divisor_fingerprint: str
+    trained_at: str
+    # The bar step 04's protocol gate set for this checkpoint: the held-out MAE
+    # of a per-protocol group mean. Carried here so 06 can print the acceptance
+    # comparison instead of leaving it to be looked up in a training log that
+    # Databricks drops on long runs.
+    protocol_baseline_mae_s: float
+    protocol_heldout_r2_pct: float
+
+
+def load_trained_model_spec(manifest_path):
+    """Read a step-04 manifest, or return None when it is absent/unusable.
+
+    WHY THIS EXISTS. 04_train_models.py stamps the exact feature list it
+    trained on into MODEL_MANIFEST.json, and until 2026-08-21 nothing read it
+    back. Steps 05/06/07 each rebuilt the list from whatever config.py said at
+    the moment they ran, so any change to the feature selection between
+    training and serving silently became a shape mismatch:
+
+        SEQPARAM_MIN_PRESENCE_PCT 1.0 -> 0.0 admitted 37 more parameters, and
+        every downstream notebook tried to load a 277-dim checkpoint into a
+        351-dim model. PyTorch raises on that regardless of `strict`, so a
+        finished GPU training run was unusable until the floor was put back.
+
+    Same principle as PR #59's num_serials-from-checkpoint fix: the artefact is
+    the authority, the config is only a default.
+
+    FAILS SOFT, matching _load_divisor_table's contract — this module is %run
+    by every notebook and imported by the test suite, neither of which can
+    require a /dbfs artefact to exist. A missing manifest means "fall back to
+    config.py and say so", not "stop".
+    """
+    try:
+        with open(manifest_path, 'r') as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+    features = payload.get('extra_conditioning_features')
+    base_dim = payload.get('base_conditioning_dim')
+    # A manifest predating either key cannot pin anything, and guessing from a
+    # partial one is worse than falling back to config.py in the open.
+    if features is None or base_dim is None:
+        return None
+
+    return TrainedModelSpec(
+        path=manifest_path,
+        extra_conditioning_features=tuple(features),
+        base_conditioning_dim=int(base_dim),
+        num_protocols=int(payload.get('num_protocols') or 0),
+        num_trigger_modes=int(payload.get('num_trigger_modes') or 0),
+        param_set=payload.get('param_set') or '',
+        presence_flags=bool(payload.get('presence_flags')),
+        divisor_fingerprint=payload.get('divisor_fingerprint') or '',
+        trained_at=payload.get('trained_at') or '',
+        protocol_baseline_mae_s=float(payload.get('protocol_baseline_mae_s') or 0.0),
+        protocol_heldout_r2_pct=float(payload.get('protocol_heldout_r2_pct') or 0.0),
+    )
+
+
+def describe_spec_drift(spec, live_features=None, max_names=8):
+    """Human-readable diff between a checkpoint's feature list and config.py's.
+
+    Returns '' when they agree. The point is to name WHICH fields moved: the
+    2026-08-21 run failed with `conditioning_projection.0.weight: checkpoint
+    [128, 357] vs. model [128, 431]`, which says a number changed but not what
+    or why. `37 field(s) config.py admits that the checkpoint never saw: ACQW,
+    ADJLR, ...` says both, and points at the floor that let them in.
+    """
+    if spec is None:
+        return ''
+    if live_features is None:
+        live_features = EXAMINATION_SEQPARAM_FEATURES
+
+    trained = list(spec.extra_conditioning_features)
+    live = list(live_features)
+    if trained == live:
+        return ''
+
+    added = [n for n in live if n not in set(trained)]
+    removed = [n for n in trained if n not in set(live)]
+
+    def _names(items):
+        head = ', '.join(items[:max_names])
+        return head if len(items) <= max_names else f"{head}, ... (+{len(items) - max_names} more)"
+
+    lines = [
+        "!! MANIFEST/CONFIG DRIFT — using the CHECKPOINT's feature list, not config.py's.",
+        f"   manifest: {spec.path}",
+        f"   trained:  {len(trained):>4} fields  base_conditioning_dim="
+        f"{spec.base_conditioning_dim}"
+        + (f"  param_set={spec.param_set!r}" if spec.param_set else "")
+        + (f"  ({spec.trained_at})" if spec.trained_at else ""),
+        f"   config:   {len(live):>4} fields"
+        + (f"  param_set={PARAM_SET!r}" if PARAM_SET else ""),
+    ]
+    if added:
+        lines.append(f"   {len(added)} field(s) config.py admits that the checkpoint never saw:")
+        lines.append(f"     {_names(added)}")
+    if removed:
+        lines.append(f"   {len(removed)} field(s) the checkpoint was trained on that config.py drops:")
+        lines.append(f"     {_names(removed)}")
+    if spec.param_set and PARAM_SET and spec.param_set != PARAM_SET:
+        lines.append(f"   PARAM_SET differs: trained {spec.param_set!r}, live {PARAM_SET!r} — "
+                     f"note MODELS_DIR is namespaced by PARAM_SET, so this is a cross-set load.")
+    if spec.divisor_fingerprint and spec.divisor_fingerprint != SEQPARAM_DIVISOR_FINGERPRINT:
+        lines.append(f"   divisor table differs: trained {spec.divisor_fingerprint}, "
+                     f"live {SEQPARAM_DIVISOR_FINGERPRINT}. Harmless for LOADING (the scale is a "
+                     f"persistent buffer that travels in the checkpoint) but the two runs are "
+                     f"NOT comparable.")
+    lines.append("   The checkpoint wins. To train on config.py's list, re-run 04_train_models.py.")
+    return "\n".join(lines)
+
+
+def build_seqparams_model_config(base_examination_config, spec=None):
     """Combine base_examination_config with use_sut_conditioning + the
     widened base_conditioning_dim / conditioning_scale for this pipeline's
-    extra numeric features. Does not mutate base_examination_config."""
-    return {
+    extra numeric features. Does not mutate base_examination_config.
+
+    With no `spec` this reads config.py, which is what step 04 wants: training
+    defines a new architecture, so the config IS the authority there.
+
+    With a `spec` from load_trained_model_spec() it reads the MANIFEST instead
+    — the feature list, the width and num_protocols all come from the file the
+    checkpoint was stamped with. That is what steps 05/06/07 want: they are
+    reconstructing an architecture that already exists, and config.py may have
+    moved on since.
+
+    Any manifest/config divergence is PRINTED here rather than returned, so a
+    caller cannot forget to surface it — this whole function exists because a
+    silent divergence cost a GPU training run.
+    """
+    if spec is None:
+        features = list(EXAMINATION_SEQPARAM_FEATURES)
+        scale = list(EXAMINATION_SEQPARAM_SCALE)
+        drift = ''
+    else:
+        features = list(spec.extra_conditioning_features)
+        # Lenient: a name the current divisor table has forgotten must not stop
+        # a valid checkpoint from loading. The trained divisors arrive with the
+        # checkpoint as a persistent buffer and overwrite all of these.
+        scale = seqparam_scale_for(features, strict=False)
+        drift = describe_spec_drift(spec)
+        if drift:
+            print(drift)
+
+    config = {
         **base_examination_config,
         'use_sut_conditioning': True,
         'num_trigger_modes': NUM_TRIGGER_MODES,
         'base_conditioning_dim': (
-            base_examination_config['base_conditioning_dim']
-            + len(EXAMINATION_SEQPARAM_FEATURES)
+            base_examination_config['base_conditioning_dim'] + len(features)
         ),
         'conditioning_scale': (
-            list(base_examination_config['conditioning_scale'])
-            + list(EXAMINATION_SEQPARAM_SCALE)
+            list(base_examination_config['conditioning_scale']) + scale
         ),
     }
+
+    if spec is not None:
+        if spec.num_trigger_modes:
+            config['num_trigger_modes'] = spec.num_trigger_modes
+        # Without this the model is built with NO protocol_embedding /
+        # protocol_cond_proj / duration_protocol_bias, the checkpoint's four
+        # protocol tensors are dropped as "unexpected", and every prediction
+        # silently falls back to RARE_PROTOCOL_ID — losing the channel that
+        # explains 76.3% of held-out duration variance against sequence_type's
+        # 18.7%. It loads cleanly and is completely wrong, which is worse than
+        # the shape error above it.
+        if spec.num_protocols:
+            config['num_protocols'] = spec.num_protocols
+        # The manifest states the width independently of the list it also
+        # states. If they disagree, one of them is from a different run and
+        # neither can be trusted to build a model.
+        if spec.base_conditioning_dim != config['base_conditioning_dim']:
+            raise ValueError(
+                f"{spec.path} is internally inconsistent: it records "
+                f"base_conditioning_dim={spec.base_conditioning_dim} but lists "
+                f"{len(features)} extra features, which with a "
+                f"{base_examination_config['base_conditioning_dim']}-dim base "
+                f"gives {config['base_conditioning_dim']}. Re-run "
+                f"04_train_models.py's manifest cell against this checkpoint."
+            )
+
+    return config

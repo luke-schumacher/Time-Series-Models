@@ -51,58 +51,33 @@
 
 # COMMAND ----------
 
-import sys, os, shutil, subprocess, importlib                                                          
-                                                                                                        
-                                                                                                        
-# 1. Scrub broken Shared paths                                                                         
-sys.path[:] = [p for p in sys.path if 'Shared/Patient Exchange and Examination' not in p]              
-                                                                                                        
-# 2. Evict every package-qualified and legacy top-level module loaded
-#    from AlternatingPipeline. The model files support both import styles.
-for mod, module_obj in list(sys.modules.items()):
-    module_file = (getattr(module_obj, '__file__', None) or '').replace('\\', '/')
-    if (mod.startswith('AlternatingPipeline') or mod == 'config' or
-            '/AlternatingPipeline/' in module_file):
-        del sys.modules[mod]
+# SOURCE BOOTSTRAP — one call, shared with 05_feature_analysis.py and
+# 06_compare_models.py via `%run ./config` above.
+#
+# This used to be TWO overlapping inline blocks in this notebook (clone /tmp/tsm
+# and pre-import, then a second pass that re-resolved the repo root), while 05
+# and 06 did something different again: they sys.path.insert'd
+# /tmp/alternating_pipeline_src, a directory only 04_train_models.py populates.
+# Three answers to one question, and the two that could not stand alone are the
+# two that died on 2026-08-21. Consolidated rather than left as-is, because a
+# second implementation is how the first one silently stops matching.
+REPO_ROOT = bootstrap_pipeline_source()
 
-# 3. Ensure /tmp/tsm exists
-TSM = '/tmp/tsm'
-if (os.path.isdir(f'{TSM}/.git') and
-        os.path.isdir(f'{TSM}/AlternatingPipeline')):
-    # /tmp persists for the life of the cluster. Refresh it so a post-push run
-    # cannot silently import an older commit.
-    subprocess.check_call([
-        'git', '-C', TSM, 'fetch', '--depth=1', 'origin', 'main',
-    ])
-    subprocess.check_call([
-        'git', '-C', TSM, 'checkout', '--detach', 'FETCH_HEAD',
-    ])
-else:
-    shutil.rmtree(TSM, ignore_errors=True)
-    subprocess.check_call(['git', 'clone', '--depth=1',
-                            'https://github.com/luke-schumacher/Time-Series-Models.git', TSM])
-if TSM not in sys.path:
-    sys.path.insert(0, TSM)
 
-# 4. Pre-import every submodule load_models touches, so each one lands in
-#    sys.modules pointing at /tmp/tsm before Databricks's Workspace finder
-#    can intercept it.
-for name in [
-    'AlternatingPipeline',
-    'AlternatingPipeline.config',
-    'AlternatingPipeline.models',
-    'AlternatingPipeline.models.exchange_model',
-    'AlternatingPipeline.models.examination_model',
-    'AlternatingPipeline.models.orchestration_model',
-    'AlternatingPipeline.models.sequence_generator',
-    'AlternatingPipeline.data',
-    'AlternatingPipeline.data.preprocessing',
-    'AlternatingPipeline.data.orchestration_preprocessing',
-]:
-    m = importlib.import_module(name)
-    print(f'  {name:60s} -> {getattr(m, "__file__", "<pkg>")}')
-
-print('\nALL MODULES LOADED FROM /tmp/tsm')
+# Post-condition on what the bootstrap actually produced. The refresh above
+# WARNS rather than fails when `git fetch` cannot reach the network, so an
+# offline cluster keeps working — at the cost of possibly running an old commit.
+# This is what turns that into one readable line instead of a bare
+# ModuleNotFoundError deep inside the run. purge=False: the bootstrap has just
+# pinned these modules on purpose.
+assert_pipeline_source_fresh(REPO_ROOT, purge=False, required_modules=[
+    "AlternatingPipeline.config",
+    "AlternatingPipeline.models.examination_model",
+    "AlternatingPipeline.models.checkpoint_compat",
+    "AlternatingPipeline.data.protocol_vocab",
+    "AlternatingPipeline.data.protocol_sampling",
+    "AlternatingPipeline.data.sut_parameter_sampling",
+])
 
 
 # COMMAND ----------
@@ -113,67 +88,6 @@ import pandas as pd
 import torch
 from datetime import datetime, timedelta
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Bootstrap: load AlternatingPipeline from a healthy source, no matter where
-# this notebook lives. The Shared workspace mount has been observed throwing
-# Errno 5 on file reads, and Databricks auto-injects the notebook's parent
-# folder onto sys.path, so we have to actively defend against both.
-#
-# Order of preference for the import root:
-#   1. /tmp/tsm                                    (refreshed from main above)
-#   2. /Workspace/Repos/<user>/Time-Series-Models  (local fallback)
-# Anything containing "Patient Exchange and Examination" is scrubbed from
-# sys.path because that path lives on the broken Workspace Files mount.
-# ─────────────────────────────────────────────────────────────────────────────
-_REPO_URL = "https://github.com/luke-schumacher/Time-Series-Models.git"
-_FALLBACK = "/tmp/tsm"
-_REPO_CANDIDATES = [
-    _FALLBACK,
-    "/Workspace/Repos/luke-schumacher/Time-Series-Models",
-]
-
-def _is_healthy_repo(path):
-    cfg = os.path.join(path, "AlternatingPipeline", "config.py")
-    if not os.path.isfile(cfg):
-        return False
-    try:
-        with open(cfg, "rb") as f:
-            f.read(64)
-        return True
-    except OSError:
-        return False
-
-REPO_ROOT = next((p for p in _REPO_CANDIDATES if _is_healthy_repo(p)), None)
-if REPO_ROOT is None:
-    if os.path.isdir(_FALLBACK):
-        shutil.rmtree(_FALLBACK)
-    subprocess.run(
-        ["git", "clone", "--depth", "1", "--branch", "main", _REPO_URL, _FALLBACK],
-        check=True,
-    )
-    REPO_ROOT = _FALLBACK
-    assert _is_healthy_repo(REPO_ROOT), f"Fresh clone at {REPO_ROOT} is still unhealthy."
-
-sys.path[:] = [p for p in sys.path if "Patient Exchange and Examination" not in p]
-if REPO_ROOT in sys.path:
-    sys.path.remove(REPO_ROOT)
-sys.path.insert(0, REPO_ROOT)
-
-for _name, _module in list(sys.modules.items()):
-    _module_file = (getattr(_module, "__file__", None) or "").replace("\\", "/")
-    if (_name.startswith("AlternatingPipeline") or _name == "config" or
-            "/AlternatingPipeline/" in _module_file):
-        del sys.modules[_name]
-
-import AlternatingPipeline as _ap
-_bad = [p for p in list(_ap.__path__) if "Patient Exchange and Examination" in p]
-if _bad or not any(REPO_ROOT in p for p in _ap.__path__):
-    raise RuntimeError(
-        f"AlternatingPipeline.__path__ is contaminated: {list(_ap.__path__)}. "
-        f"Expected entries under {REPO_ROOT}."
-    )
-print(f"[bootstrap] REPO_ROOT = {REPO_ROOT}")
-print(f"[bootstrap] AlternatingPipeline.__path__ = {list(_ap.__path__)}")
 
 # SEQPARAMS FORK: two pkls and two model dirs. `%run ./config` above already
 # defined MODELS_DIR / PKL_OUTPUT for THIS pipeline; both are re-bound to
@@ -313,6 +227,31 @@ for _k, _m in _ckpt_meta.items():
         _warnings.append(f"{_k} checkpoint is NEWER than the manifest — retrained without "
                          f"re-stamping. Re-run step 04's manifest cell.")
 
+# --- does the LIVE config still describe the trained architecture? ----------
+# The gate above compares shas, which catches "someone re-ran step 03". It does
+# NOT catch the failure that actually happened on 2026-08-21: nothing on disk
+# changed, config.py did. The rare-field floor moved 1.0 -> 0.0, admitting 37
+# more parameters, and the notebook died 200 lines later on a raw tensor shape.
+# Naming the divergence HERE turns that into one readable line at the gate.
+_exam_spec = load_trained_model_spec(_CHECKPOINT_SOURCE["examination"][1])
+if _exam_spec is None:
+    _warnings.append(
+        f"examination: manifest at {_CHECKPOINT_SOURCE['examination'][1]} carries no "
+        f"extra_conditioning_features/base_conditioning_dim, so the conditioning cannot "
+        f"be pinned to the checkpoint and falls back to config.py. Re-run step 04's "
+        f"manifest cell."
+    )
+else:
+    _drift = describe_spec_drift(_exam_spec)
+    if _drift:
+        print("\n" + _drift)
+        _warnings.append(
+            f"examination: config.py describes {len(EXAMINATION_SEQPARAM_FEATURES)} "
+            f"conditioning features, the checkpoint was trained on "
+            f"{len(_exam_spec.extra_conditioning_features)} (see the drift report above). "
+            f"Generation uses the CHECKPOINT's list; the two runs are not comparable."
+        )
+
 print("\n" + "-" * 64)
 if _warnings:
     print(f"!! {len(_warnings)} FRESHNESS WARNING(S) — review before trusting this run:")
@@ -354,6 +293,8 @@ from AlternatingPipeline.models.examination_model import create_examination_mode
 from AlternatingPipeline.models.orchestration_model import create_orchestration_model
 from AlternatingPipeline.models.checkpoint_compat import load_checkpoint_lenient
 from AlternatingPipeline.data.sut_parameter_sampling import build_sut_sampler
+from AlternatingPipeline.data.protocol_sampling import build_protocol_sampler
+from AlternatingPipeline.data.protocol_vocab import RARE_PROTOCOL_ID
 from AlternatingPipeline.data.orchestration_preprocessing import (
     extract_orchestration_samples, build_demographic_distributions,
     _compute_scanner_stats,
@@ -428,10 +369,34 @@ print("Exchange model loaded.")
 
 # --- load examination model (SEQPARAMS FORK) ---
 # build_seqparams_model_config comes from this notebook's own `%run ./config`
-# — the single source of truth shared with 04_train_models.py,
-# 05_feature_analysis.py and 06_compare_models.py, so the serve-side model is
-# built exactly as the trained one was.
-EXAMINATION_MODEL_CONFIG_SEQPARAMS = build_seqparams_model_config(EXAMINATION_MODEL_CONFIG)
+# — shared with 04_train_models.py, 05_feature_analysis.py and
+# 06_compare_models.py.
+#
+# THE CHECKPOINT'S MANIFEST IS THE AUTHORITY FOR ITS ARCHITECTURE, not
+# config.py. This comment used to claim that sharing the builder meant "the
+# serve-side model is built exactly as the trained one was". It does not: it
+# makes the four notebooks agree with EACH OTHER, and guarantees nothing about
+# agreeing with a checkpoint written an hour ago.
+#
+# On 2026-08-21 config.py's rare-field floor moved 1.0 -> 0.0 between
+# training and generation, admitting 37 more parameters
+# (133 -> 170 fields, base_conditioning_dim 277 -> 351), and this notebook died
+# on `conditioning_projection.0.weight: checkpoint [128, 357] vs. model
+# [128, 431]`. `spec=` makes the builder read the manifest instead, which also
+# restores num_protocols — without it the model is built with no protocol
+# tensors at all and every generated scan silently uses RARE_PROTOCOL_ID.
+_SPEC = load_trained_model_spec(f"{MODELS_DIR}/MODEL_MANIFEST.json")
+if _SPEC is None:
+    print(f"!! No usable MODEL_MANIFEST.json at {MODELS_DIR} — falling back to config.py's "
+          f"feature list. Expect a shape mismatch if the checkpoint was trained under a "
+          f"different feature selection. Re-run 04's manifest cell.")
+    EXTRA_FEATURES = list(EXAMINATION_SEQPARAM_FEATURES)
+else:
+    EXTRA_FEATURES = list(_SPEC.extra_conditioning_features)
+
+EXAMINATION_MODEL_CONFIG_SEQPARAMS = build_seqparams_model_config(
+    EXAMINATION_MODEL_CONFIG, spec=_SPEC,
+)
 
 # --- num_serials from the CHECKPOINT, not from a hardcoded config -----------
 # Ported from PR #59 (NavneetKishanS). Serve-side counterpart of the training
@@ -446,6 +411,7 @@ EXAMINATION_MODEL_CONFIG_SEQPARAMS = build_seqparams_model_config(EXAMINATION_MO
 # removes the cause; the lenient loader below stays as the detector for the
 # next one.
 _exam_ckpt = torch.load(_CHECKPOINTS["examination"], map_location=device)
+EXAM_NUM_SERIALS = int(NUM_SERIALS)
 if 'serial_embedding.weight' in _exam_ckpt:
     _ckpt_serials = int(_exam_ckpt['serial_embedding.weight'].shape[0])
     if _ckpt_serials != EXAMINATION_MODEL_CONFIG_SEQPARAMS.get('num_serials'):
@@ -453,10 +419,19 @@ if 'serial_embedding.weight' in _exam_ckpt:
               f"{EXAMINATION_MODEL_CONFIG_SEQPARAMS.get('num_serials')} -> "
               f"{_ckpt_serials} (from the checkpoint, not config)")
         EXAMINATION_MODEL_CONFIG_SEQPARAMS['num_serials'] = _ckpt_serials
+    # The OTHER half of PR #59, which did not get carried across: deriving
+    # num_serials fixes how the model is BUILT, but the loop below still has to
+    # pick which embedding row each synthetic scanner uses, and it was clamping
+    # against AlternatingPipeline.config.NUM_SERIALS (a hardcoded 10). Today
+    # those agree, so it is invisible; after a 21-serial retrain it would
+    # silently route every scanner past the tenth to serial 9 while the model
+    # had eleven more rows sitting unused.
+    EXAM_NUM_SERIALS = _ckpt_serials
 
 print(f"Examination conditioning: base_conditioning_dim="
       f"{EXAMINATION_MODEL_CONFIG_SEQPARAMS['base_conditioning_dim']}, "
-      f"extra features={EXAMINATION_SEQPARAM_FEATURES}")
+      f"{len(EXTRA_FEATURES)} extra features, "
+      f"num_protocols={EXAMINATION_MODEL_CONFIG_SEQPARAMS.get('num_protocols')}")
 examination_model = create_examination_model(EXAMINATION_MODEL_CONFIG_SEQPARAMS).to(device)
 load_checkpoint_lenient(
     examination_model,
@@ -470,17 +445,54 @@ print("Examination model loaded.")
 # TR/num_slices are model INPUTS taken from a real MRI_SUT_1005 message. A
 # synthetic scan has none, so they are drawn jointly from the real training
 # distribution for the scan's (body_region, sequence_type).
-sut_sampler = build_sut_sampler(exam_data, EXAMINATION_SEQPARAM_FEATURES)
+sut_sampler = build_sut_sampler(exam_data, EXTRA_FEATURES)
 if sut_sampler is not None:
     print(sut_sampler.describe())
 else:
-    print("No EXAMINATION_SEQPARAM_FEATURES configured — SUT sampling disabled.")
+    print("No conditioning features configured — SUT sampling disabled.")
+
+# --- protocol sampler (SEQPARAMS FORK) ---
+# The protocol is a model INPUT and the strongest one this checkpoint has: step
+# 04's gate measured a per-protocol group mean at held-out R2 76.3% / MAE 16.2s
+# against sequence_type's 18.7% / 59.9s. A synthetic scan has no MRI_MSR_100
+# message, so it is drawn from the real distribution for the scan's
+# (serial, body_region, sequence_type) — the same treatment TR/num_slices get
+# directly above, for the same reason.
+#
+# Doing nothing here is NOT neutral: sequence_generator falls back to
+# RARE_PROTOCOL_ID whenever the key is absent, pinning every synthetic scan to
+# the one embedding row trained on the 3.4% of sequences too infrequent to earn
+# their own. Until 2026-08-21 that is exactly what happened, while the CSV's
+# Protocol column carried one of eight invented names that appear nowhere in the
+# real data — so the column could not be used as a shared Qlik dimension either.
+_VOCAB_PATH = f"{EXAM_MODELS_DIR}/protocol_vocab.json"
+try:
+    with open(_VOCAB_PATH) as _vf:
+        PROTOCOL_VOCAB = json.load(_vf)["vocab"]
+    print(f"Protocol vocabulary: {len(PROTOCOL_VOCAB):,} protocols from {_VOCAB_PATH}")
+except (OSError, ValueError, KeyError) as _err:
+    raise RuntimeError(
+        f"Cannot read the protocol vocabulary at {_VOCAB_PATH} ({_err}). The checkpoint's "
+        f"protocol_embedding / duration_protocol_bias rows are indexed by it, and "
+        f"generating without it would pin every synthetic scan to RARE_PROTOCOL_ID. "
+        f"Re-run 04_train_models.py's vocabulary cell against this checkpoint."
+    )
+
+protocol_sampler = build_protocol_sampler(exam_data, PROTOCOL_VOCAB)
+if protocol_sampler is None:
+    raise RuntimeError(
+        f"No examination sequences in {SEQPARAMS_PKL} to draw protocols from."
+    )
+print(protocol_sampler.describe())
 
 # Records what was actually fed in, so a collapsed/constant draw is visible in
 # the run summary instead of being silently invisible — this project has lost
 # weeks to conditioning that looked wired up but wasn't.
 from collections import Counter as _Counter
 sut_draw_counter = _Counter()
+# Same rationale for the protocol: a sampler that has collapsed to one name
+# looks exactly like a working one from the outside.
+protocol_draw_counter = _Counter()
 
 # --- per-sequence-type duration calibration (from duration_probe.json) ---
 # The duration head predicts the right RELATIVE order of scan types but can
@@ -625,8 +637,9 @@ def _build_cond_tensor(patient_info, current_time, day_start):
 
 
 # SEQPARAMS FORK: the examination model's conditioning is wider than the
-# exchange model's (10 base + one column per EXAMINATION_SEQPARAM_FEATURES, in
-# order, appended at the end — matching
+# exchange model's (10 base + one column per EXTRA_FEATURES — the list the
+# CHECKPOINT was trained on, taken from its manifest — in order, appended at the
+# end, matching
 # AlternatingPipeline/training/utils.py::build_conditioning_tensor). Values are
 # RAW here; the model divides them by its own `conditioning_scale` buffer, so
 # generation must NOT pre-scale them or the features land at the wrong
@@ -646,11 +659,11 @@ def _build_exam_cond_tensor(patient_info, current_time, day_start, region_id, se
     report what was actually fed in, rather than it being invisible.
     """
     base = _build_cond_tensor(patient_info, current_time, day_start)
-    if not EXAMINATION_SEQPARAM_FEATURES or sut_sampler is None:
+    if not EXTRA_FEATURES or sut_sampler is None:
         return base, {}
     sut_values = sut_sampler.sample(region_id, seq_type)
     extras = torch.tensor(
-        [float(sut_values[name]) for name in EXAMINATION_SEQPARAM_FEATURES],
+        [float(sut_values[name]) for name in EXTRA_FEATURES],
         dtype=torch.float32, device=base.device,
     )
     return torch.cat([base, extras]), sut_values
@@ -701,10 +714,12 @@ _EXAM_COIL_COLS = [
     '#0_SN',
 ]
 
-# Synthetic sequence name pool (used for exam Sequence/Protocol columns)
+# Synthetic sequence name pool (used for the exam Sequence column on the
+# exchange side). The Protocol counterpart that used to live here was retired on
+# 2026-08-21: exam Protocol values are now drawn from the real corpus by
+# protocol_sampler, because the same value is also a model input and an invented
+# name has no embedding row.
 _SEQUENCES  = ['tse', 'gre', 'tfl', 'ep2d', 'tirm', 'vibe']
-_PROTOCOLS  = ['t1_tse_sag', 't2_tse_tra', 'gre_field_map', 'dti_FA',
-               'localizer', 't1_mprage', 'bold_rest', 't2_flair']
 
 
 def _generate_exchange_rows(tokens, durations, mu, sigma, day_start, t_offset,
@@ -811,7 +826,7 @@ def _generate_exchange_rows(tokens, durations, mu, sigma, day_start, t_offset,
 def _generate_exam_rows(tokens, durations, mu, sigma, day_start, t_offset,
                          patient_id, body_region_id, patient_info,
                          serial, step_counter, customer_idx, sample_idx,
-                         sequence_type_name='other'):
+                         sequence_type_name='other', protocol_name=''):
     """
     Convert a generated examination token sequence into measurement-level rows
     matching the exam CSV format from 02_exam_preprocessing.py, with model
@@ -898,7 +913,12 @@ def _generate_exam_rows(tokens, durations, mu, sigma, day_start, t_offset,
                 # Sequence reflects the scan type the model was conditioned
                 # on for this scan (no longer a random pick).
                 'Sequence':       sequence_type_name,
-                'Protocol':       np.random.choice(_PROTOCOLS),
+                # The protocol the model was CONDITIONED on for this scan,
+                # drawn from the real distribution for this scanner/region/type
+                # (no longer one of eight invented names that appear nowhere in
+                # the real data). Same contract as `Sequence` above, and what
+                # makes this column a shared Qlik dimension.
+                'Protocol':       protocol_name,
                 'PatientID':      patient_id,
                 'BodyPart':       body_name,
                 'BodyGroup':      body_name,
@@ -934,7 +954,8 @@ def _generate_exam_rows(tokens, durations, mu, sigma, day_start, t_offset,
 
 def _generate_valid_exam_rows(cond, region_id, seq_type, serial_idx,
                               day_start, current_t, patient_id, patient_info,
-                              serial, step_counter, customer_idx, sample_idx):
+                              serial, step_counter, customer_idx, sample_idx,
+                              protocol_pid=RARE_PROTOCOL_ID, protocol_name=''):
     """Generate one scan, then safely repair the last malformed sample if needed."""
     candidates = []
     for attempt in range(1, MAX_GENERATION_ATTEMPTS + 1):
@@ -950,6 +971,13 @@ def _generate_valid_exam_rows(cond, region_id, seq_type, serial_idx,
                     # that encodes gating mode is still unidentified), so
                     # feeding anything else here would be out of distribution.
                     'trigger_mode': _SYNTH_TRIGGER_MODE,
+                    # The strongest duration channel this checkpoint has, and
+                    # the one it was retrained for. It reaches the duration
+                    # encoder through duration_protocol_bias at EVERY token
+                    # position — the same route that makes sequence_type the
+                    # only channel the head has ever responded to. Omitting the
+                    # key does not disable it, it pins it to RARE_PROTOCOL_ID.
+                    'protocol': protocol_pid,
                 },
                 max_length=gen_config['max_length'],
                 temperature=gen_config['temperature'],
@@ -975,6 +1003,7 @@ def _generate_valid_exam_rows(cond, region_id, seq_type, serial_idx,
                 patient_id, region_id, patient_info,
                 serial, step_counter, customer_idx, sample_idx,
                 sequence_type_name=ID_TO_SEQUENCE_TYPE.get(seq_type, 'other'),
+                protocol_name=protocol_name,
             )
             return rows, next_t, attempt - 1, False
         except GenerationIntegrityError:
@@ -1053,6 +1082,7 @@ def _generate_valid_exam_rows(cond, region_id, seq_type, serial_idx,
         patient_id, region_id, patient_info,
         serial, step_counter, customer_idx, sample_idx,
         sequence_type_name=ID_TO_SEQUENCE_TYPE.get(seq_type, 'other'),
+        protocol_name=protocol_name,
     )
     return rows, next_t, MAX_GENERATION_ATTEMPTS, True
 
@@ -1183,7 +1213,12 @@ for customer_idx, (serial_str, daily_schedules) in enumerate(customer_schedules.
     # serial_idx indexes the examination model's serial embedding. customer
     # iteration order matches step 03's SERIAL_NUMBERS order, so customer_idx
     # is the serial_idx step 03 wrote into the pkl.
-    serial_idx = min(customer_idx, NUM_SERIALS - 1)
+    #
+    # Clamped against the CHECKPOINT's embedding height, not a config constant —
+    # an out-of-range lookup is an IndexError on CPU and a CUDA device-side
+    # assert on GPU, and a too-low constant is worse still because it silently
+    # collapses distinct scanners onto one row instead of failing.
+    serial_idx = min(customer_idx, EXAM_NUM_SERIALS - 1)
 
     all_exchange_rows  = []
     all_exam_rows      = []
@@ -1309,10 +1344,18 @@ for customer_idx, (serial_str, daily_schedules) in enumerate(customer_schedules.
                     patient, current_t, day_start, region_id, seq_type
                 )
                 sut_draw_counter[tuple(sorted(_sut_values.items()))] += 1
+                # One draw serves both consumers: the id conditions the model,
+                # the raw name goes into the CSV. Drawing them separately would
+                # let the two disagree about what was generated.
+                _proto_pid, _proto_name = protocol_sampler.sample(
+                    serial_idx, region_id, seq_type
+                )
+                protocol_draw_counter[_proto_name] += 1
                 exam_rows, current_t, retries, used_fallback = _generate_valid_exam_rows(
                     cond, region_id, seq_type, serial_idx,
                     day_start, current_t, pat_id, patient,
                     serial_str, step_counter, customer_idx, exam_sample_idx,
+                    protocol_pid=_proto_pid, protocol_name=_proto_name,
                 )
                 regeneration_count += retries
                 fallback_exam_count += int(used_fallback)
@@ -1724,30 +1767,61 @@ if not df_exam_all.empty and {'duration', 'Sequence'}.issubset(df_exam_all.colum
 # Proves the SUT features reached the model and varied. A single distinct draw
 # means the sampler collapsed and every scan was conditioned identically.
 lines += ['', _HR, ' 4c. SUT PARAMETERS FED TO THE EXAMINATION MODEL', _HR]
-if not EXAMINATION_SEQPARAM_FEATURES:
+if not EXTRA_FEATURES:
     lines.append('  No SUT features configured — examination conditioning is 10-dim.')
 elif not sut_draw_counter:
     lines.append('  !! No SUT draws recorded — no scans were generated.')
 else:
     _total_draws = sum(sut_draw_counter.values())
     lines.append(
-        f'  {_total_draws:,} scans conditioned on {EXAMINATION_SEQPARAM_FEATURES}; '
+        f'  {_total_draws:,} scans conditioned on {len(EXTRA_FEATURES)} SUT features; '
         f'{len(sut_draw_counter):,} distinct value combinations.'
     )
-    lines.append('  Most frequent draws:')
+    lines.append('  Most frequent draws (first 6 fields of each):')
     for _combo, _cnt in sut_draw_counter.most_common(5):
-        _rendered = ', '.join(f'{k}={v:g}' for k, v in _combo)
-        lines.append(f'    {_rendered:<40} {_cnt:>6,}  ({_pct(_cnt, _total_draws)})')
+        _rendered = ', '.join(f'{k}={v:g}' for k, v in _combo[:6])
+        lines.append(f'    {_rendered:<60} {_cnt:>6,}  ({_pct(_cnt, _total_draws)})')
     if len(sut_draw_counter) == 1:
         lines.append('  << COLLAPSED — every scan got identical SUT values. '
                      'Check the sampler pools and the seqparams pkl.')
     else:
         lines.append('  >> varied — SUT sampling is producing a real distribution.')
     lines.append(
-        '  NOTE: as of the 2026-07-24 checkpoint these features have 0.0% '
-        'permutation importance, so varying them is not expected to move '
-        'durations yet. See 05_feature_analysis.py.'
+        '  NOTE: on the 2026-07-24 checkpoint these features had 0.0% permutation '
+        'importance, so varying them was not expected to move durations. Re-read '
+        '05_feature_analysis.py for THIS checkpoint before repeating that claim.'
     )
+
+# ── 4d. PROTOCOL FED TO THE EXAMINATION MODEL (SEQPARAMS FORK) ───────────────
+# The model's strongest duration channel, and the one most easily left dead:
+# an absent 'protocol' key is not an error, it is a silent fallback to
+# RARE_PROTOCOL_ID. A single distinct name here means the sampler collapsed and
+# every scan was conditioned on the same protocol.
+lines += ['', _HR, ' 4d. PROTOCOLS FED TO THE EXAMINATION MODEL', _HR]
+if not protocol_draw_counter:
+    lines.append('  !! No protocol draws recorded — no scans were generated.')
+else:
+    _proto_total = sum(protocol_draw_counter.values())
+    _proto_empty = protocol_draw_counter.get('', 0)
+    lines.append(
+        f'  {_proto_total:,} scans conditioned on {len(protocol_draw_counter):,} '
+        f'distinct protocol names (vocabulary holds {len(PROTOCOL_VOCAB):,}).'
+    )
+    lines.append('  Most frequent draws:')
+    for _name, _cnt in protocol_draw_counter.most_common(5):
+        lines.append(f'    {(_name or "<no pool — rare bucket>"):<40} '
+                     f'{_cnt:>6,}  ({_pct(_cnt, _proto_total)})')
+    if len(protocol_draw_counter) == 1:
+        lines.append('  << COLLAPSED — every scan got the same protocol. Check the '
+                     'sampler pools and that the pkl carries protocol_name.')
+    else:
+        lines.append('  >> varied — protocol sampling is producing a real distribution.')
+    if _proto_empty:
+        lines.append(
+            f'  {_pct(_proto_empty, _proto_total)} of scans fell through every pool to '
+            f'RARE_PROTOCOL_ID with no name. Those rows carry an empty Protocol column '
+            f'on purpose — an invented name would have no embedding row.'
+        )
 
 # ── 5. FINISH EVENT DISTRIBUTION ─────────────────────────────────────────────
 lines += ['', _HR, ' 5. EXAM FINISH EVENT DISTRIBUTION', _HR]

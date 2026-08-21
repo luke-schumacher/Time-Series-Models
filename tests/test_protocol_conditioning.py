@@ -9,6 +9,7 @@ sequence_type), so it gets the same per-position treatment, and these tests pin
 that it is actually wired that way rather than merely present in the config.
 """
 
+import os
 import unittest
 
 import torch
@@ -278,3 +279,118 @@ class ProtocolTrainingPathTests(unittest.TestCase):
                                      protocol_vocab={'anything': 1})
         self.assertTrue(all(dataset[i][8].item() == RARE_PROTOCOL_ID
                             for i in range(len(dataset))))
+
+
+class ServeSideProtocolWiringTests(unittest.TestCase):
+    """Steps 05/06/07 must actually pass the protocol, not merely be able to.
+
+    Commit f276ed5 added protocol conditioning to the model and to step 04,
+    froze the vocabulary next to the checkpoint, and left a comment in
+    04_train_models.py saying "Steps 05/06/07 MUST read this file rather than
+    rebuilding the vocabulary from a pkl". None of the three were updated, and
+    for three weeks nothing noticed — because omitting the key is NOT an error.
+    `sequence_generator` falls back to RARE_PROTOCOL_ID, the checkpoint's four
+    protocol tensors are reported as merely "unexpected", and everything runs.
+
+    So the failure mode is a comment nobody executed. These are text guards on
+    the notebooks, in the same style as the num_serials guards in
+    test_seqparams_config_guard.py, because the notebooks cannot be imported
+    outside Databricks — they read Spark and `%run ./config` at module level.
+    """
+
+    _NOTEBOOKS = ('05_feature_analysis.py', '06_compare_models.py',
+                  '07_generate_synthetic_data.py')
+
+    def _read(self, name):
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'DatabricksPipeline', 'csv_pipeline_seqparams', name,
+        )
+        with open(path) as handle:
+            return handle.read()
+
+    def test_every_serving_notebook_reads_the_frozen_vocabulary(self):
+        for name in self._NOTEBOOKS:
+            with self.subTest(notebook=name):
+                source = self._read(name)
+                self.assertIn('protocol_vocab.json', source)
+                self.assertIn('PROTOCOL_VOCAB', source)
+
+    def test_every_serving_notebook_passes_a_protocol_to_the_model(self):
+        for name in self._NOTEBOOKS:
+            with self.subTest(notebook=name):
+                self.assertIn("'protocol':", self._read(name))
+
+    def test_a_missing_vocabulary_stops_the_run_rather_than_degrading(self):
+        """Degrading here is worse than stopping.
+
+        Without the vocabulary every prediction uses RARE_PROTOCOL_ID, so 06
+        would report an MAE for a model with its strongest input disconnected
+        and 07 would generate from one. Both look completely normal.
+        """
+        for name in self._NOTEBOOKS:
+            with self.subTest(notebook=name):
+                source = self._read(name)
+                self.assertIn('Cannot read the protocol vocabulary', source)
+
+    def test_every_serving_notebook_pins_conditioning_to_the_manifest(self):
+        """The 2026-08-21 failure: the width came from config.py, which had
+        moved on since training (rare-field floor 1.0 -> 0.0, 133 -> 170 fields,
+        base_conditioning_dim 277 -> 351)."""
+        for name in self._NOTEBOOKS:
+            with self.subTest(notebook=name):
+                source = self._read(name)
+                self.assertIn('load_trained_model_spec', source)
+                self.assertIn('spec=_SPEC', source)
+
+    def test_steps_05_and_06_no_longer_depend_on_step_04s_tmp_copy(self):
+        """They imported from /tmp/alternating_pipeline_src, a directory only
+        step 04 populates, so they could only run on the machine that had just
+        trained. /tmp is per-machine and per-cluster-lifetime."""
+        for name in ('05_feature_analysis.py', '06_compare_models.py'):
+            with self.subTest(notebook=name):
+                source = self._read(name)
+                self.assertIn('bootstrap_pipeline_source()', source)
+                self.assertNotIn('sys.path.insert(0, _AP_PATH)', source)
+
+    def test_step_07_draws_a_real_protocol_instead_of_inventing_one(self):
+        source = self._read('07_generate_synthetic_data.py')
+        self.assertIn('build_protocol_sampler', source)
+        self.assertIn('protocol_sampler.sample(', source)
+        # The eight-name placeholder pool wrote names that appear nowhere in the
+        # real corpus, so the synthetic Protocol column could not share a Qlik
+        # dimension with the real one — and had no embedding row either.
+        self.assertNotIn("np.random.choice(_PROTOCOLS)", source)
+        self.assertNotIn("_PROTOCOLS  = [", source)
+
+    def test_step_07_reports_what_it_actually_drew(self):
+        """A sampler collapsed to one name looks exactly like a working one."""
+        source = self._read('07_generate_synthetic_data.py')
+        self.assertIn('protocol_draw_counter', source)
+        self.assertIn('COLLAPSED', source)
+
+    def test_step_05_ranks_the_protocol_channel(self):
+        """Its rank is the cheapest check that the ids are arriving:
+        duration_protocol_bias is a trained per-position embedding, so a
+        near-zero degradation means broken wiring, not a weak signal."""
+        source = self._read('05_feature_analysis.py')
+        self.assertIn("['protocol', 'sequence_type'", source)
+        self.assertIn("shuffle_field == 'protocol'", source)
+
+    def test_step_06_probes_the_protocol_channel_and_prints_the_bar(self):
+        source = self._read('06_compare_models.py')
+        self.assertIn('PROTOCOL CHANNEL IS NOT ARRIVING', source)
+        # The acceptance number step 04's gate stamped into the manifest.
+        self.assertIn('protocol_baseline_mae_s', source)
+
+    def test_step_06_does_not_let_protocol_mask_a_dead_conditioning_token(self):
+        """Criterion 1b asks whether channels arriving ONLY via the conditioning
+        token move the duration head. protocol also has a per-position route, so
+        selecting cond-token-only channels as "everything except the control"
+        would let a live protocol answer that question with the wrong yes."""
+        source = self._read('06_compare_models.py')
+        self.assertIn('_cond_only_labels', source)
+        self.assertNotIn(
+            "_cond_only = [v for k, v in _channel_results.items() if k != _control_label]",
+            source,
+        )
