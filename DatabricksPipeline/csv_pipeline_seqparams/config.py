@@ -152,6 +152,16 @@ BASE_PKL = os.environ.get(
 BASE_MODELS_DIR = os.environ.get(
     'BASE_MODELS_DIR', "/dbfs/FileStore/csv_pipeline/models")
 
+# The real per-scan exam CSVs written by csv_pipeline/02_exam_preprocessing.py.
+# Step 07 reads them to build the intra-visit gap prior — the pause between two
+# scans of the SAME examination, which the generator used to hard-code to zero
+# (see AlternatingPipeline/data/intra_visit_gap.py). They carry PatientID and
+# StepCount, which the seqparams pkl does not, so a visit can be segmented
+# without a Spark run or a pkl rebuild. Absent directory -> the prior is empty
+# and generation falls back to the old back-to-back behaviour with a warning.
+BASE_EXAM_CSV_DIR = os.environ.get(
+    'BASE_EXAM_CSV_DIR', "/dbfs/FileStore/csv_pipeline/exam")
+
 # Models and analysis ARE namespaced by PARAM_SET. Two sets can widen
 # base_conditioning_dim to the same number while meaning different things per
 # column, so a shared directory would silently overwrite one checkpoint with

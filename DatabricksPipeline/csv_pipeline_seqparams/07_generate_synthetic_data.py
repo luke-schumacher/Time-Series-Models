@@ -293,6 +293,9 @@ from AlternatingPipeline.models.examination_model import create_examination_mode
 from AlternatingPipeline.models.orchestration_model import create_orchestration_model
 from AlternatingPipeline.models.checkpoint_compat import load_checkpoint_lenient
 from AlternatingPipeline.data.sut_parameter_sampling import build_sut_sampler
+from AlternatingPipeline.data.intra_visit_gap import (
+    build_gap_sampler_from_csvs, save_gap_prior,
+)
 from AlternatingPipeline.data.protocol_sampling import build_protocol_sampler
 from AlternatingPipeline.data.protocol_vocab import RARE_PROTOCOL_ID
 from AlternatingPipeline.data.orchestration_preprocessing import (
@@ -591,6 +594,33 @@ def _sample_sequence_type(region_id):
     """Draw a sequence-type id from the real distribution for this region."""
     pool = _region_seqtypes.get(int(region_id)) or _all_seqtypes
     return int(np.random.choice(pool))
+
+
+# ── INTRA-VISIT GAP PRIOR ────────────────────────────────────────────────────
+# The pause between two scans of the SAME examination. Until 2026-08-26 the
+# generator had none: the clock advanced by the scan duration alone, so scan N+1
+# started the instant scan N ended and every intra-visit gap was exactly 0.0s.
+# Real data puts 30.4% of examination wall clock in those gaps, which is why our
+# per-scan durations matched while the EXAMINATION came out ~30% short. See
+# AlternatingPipeline/data/intra_visit_gap.py for the measurements.
+#
+# Built from the real exam CSVs rather than the pkl because a visit has to be
+# segmented on StepCount, and the pkl carries no patient id. No Spark, no
+# rebuild. A missing directory yields a dead sampler and the old behaviour.
+_gap_sampler, _gap_csvs = build_gap_sampler_from_csvs(BASE_EXAM_CSV_DIR)
+print(_gap_sampler.describe() + f"  [{len(_gap_csvs)} exam CSVs from {BASE_EXAM_CSV_DIR}]")
+if not _gap_sampler.is_live:
+    print(f"  !! No exam CSVs under {BASE_EXAM_CSV_DIR} — scans will be generated "
+          f"back-to-back and examination wall clock will read ~30% short. Set "
+          f"BASE_EXAM_CSV_DIR to where 02_exam_preprocessing.py wrote them.")
+else:
+    _gap_prior_path = save_gap_prior(
+        _gap_sampler.prior, f"{MODELS_DIR}/examination/intra_visit_gap_prior.json")
+    print(f"  Wrote gap prior → {_gap_prior_path}")
+
+# Its own stream, so adding the gap does not shift every other draw in the run
+# and make this change look like it moved things it did not touch.
+_GAP_RNG = np.random.default_rng(int(os.environ.get('GAP_SEED', 20260826)))
 
 
 def _sample_fallback_exam_duration(region_id, sequence_type, serial_idx):
@@ -1244,6 +1274,8 @@ for customer_idx, (serial_str, daily_schedules) in enumerate(customer_schedules.
         continue
 
     step_counter = {}   # tracks StepCount per patient_id across the day
+    intra_gap_total_s = 0.0   # seconds of pause inserted BETWEEN scans of one visit
+    intra_gap_count = 0
 
     for date_str in dates:
         print(f"  Day: {date_str}")
@@ -1332,13 +1364,31 @@ for customer_idx, (serial_str, daily_schedules) in enumerate(customer_schedules.
             num_scans = min(num_scans, 20)          # clamp the tail
             scans_rendered = 0
             for _scan in range(num_scans):
-                if not day_budget.accepts_scan(current_t, scans_rendered):
-                    day_dropped_scans += num_scans - scans_rendered
-                    break
                 # Draw a scan type from this region's real mix and condition
                 # the model on it — this is what gives duration variability
                 # (short scouts vs long TSE/SPACE) instead of a flat mean.
+                # Drawn BEFORE the budget check now, because the gap that
+                # precedes this scan depends on which scan it is.
                 seq_type = _sample_sequence_type(region_id)
+
+                # The pause before this scan: the operator planning the slab,
+                # repositioning, coaching a breath-hold, injecting contrast.
+                # Attributed to the scan it PRECEDES, which is why seq_type is
+                # drawn first — the pause before a scout is a stage change and
+                # runs 5-10x longer than the rest (median 168s vs 19s).
+                # Not applied before the FIRST scan of a visit: that pause is
+                # the patient handover, which the exchange block already covers.
+                _gap = _gap_sampler.sample(seq_type, _GAP_RNG) if _scan else 0.0
+
+                # Budget-checked at the POST-gap clock, and only committed if the
+                # scan actually happens — otherwise a truncated day would still
+                # burn the pause and push the shutdown exchange later.
+                if not day_budget.accepts_scan(current_t + _gap, scans_rendered):
+                    day_dropped_scans += num_scans - scans_rendered
+                    break
+                current_t += _gap
+                intra_gap_total_s += _gap
+                intra_gap_count += int(_gap > 0)
                 # SEQPARAMS FORK: widened conditioning + sampled TR/num_slices.
                 cond, _sut_values = _build_exam_cond_tensor(
                     patient, current_t, day_start, region_id, seq_type
@@ -1466,6 +1516,23 @@ for customer_idx, (serial_str, daily_schedules) in enumerate(customer_schedules.
             flag = ('  ⚠ ' + '; '.join(flags)) if flags else ''
             print(f"  Exam duration: mean={mean_dur:.1f}s  median={med_dur:.1f}s  "
                   f"p99={p99_dur:.0f}s  >600s={long_share:.2f}%  n={len(durs)}{flag}")
+
+            # What the intra-visit pause added, in the same units. Real data
+            # puts 30.4% of examination wall clock here; a share far below that
+            # means the prior did not load or the visits are too short to
+            # contain any gaps at all.
+            _scan_total = sum(durs)
+            if intra_gap_count:
+                _share = 100.0 * intra_gap_total_s / max(1.0, _scan_total + intra_gap_total_s)
+                print(f"  Intra-visit pause: {intra_gap_count:,} gaps  "
+                      f"mean={intra_gap_total_s/intra_gap_count:.1f}s  "
+                      f"total={intra_gap_total_s/3600:.1f}h  "
+                      f"{_share:.1f}% of examination wall clock (real 30.4%)"
+                      + ('' if 20.0 <= _share <= 42.0
+                         else '  ⚠ off the real share'))
+            else:
+                print("  Intra-visit pause: NONE INSERTED — examination wall clock "
+                      "will read ~30% short (real: 30.4% of it is between-scan pause)")
 
     # ── Save exchange CSV ──
     if all_exchange_rows:
@@ -1633,6 +1700,38 @@ def _safe_stat(arr, fn):
     try: return fn(arr[~np.isnan(arr)])
     except: return float('nan')
 
+# =============================================================================
+# THE VISIT KEY, and why the report needs one.
+#
+# `PatientID` is f'SYNTH_{date}_{nnn}' — it carries the DATE but not the SERIAL,
+# so patient 007 on scanner A and patient 007 on scanner B, same day, share an
+# id. Each scanner writes its own CSV so nothing is ambiguous on disk, but this
+# report concatenates all 20 of them: a bare groupby('PatientID') collapsed
+# 7,563 generated visits into ~624 buckets, which is why section 8 read
+# "12.6 scans per patient" against a generator that draws Poisson(8), and why
+# section 11's weekday load was ~1/12 of the patients actually generated.
+#
+# (SN, PatientID) is unique per visit and is what every per-patient aggregate
+# below groups on. Sections 2 and 4's per-scanner tables were already safe —
+# they carry SN in the group key.
+# =============================================================================
+_VISIT_KEYS = ['SN', 'PatientID']
+
+# Real-data reference values, so a synthetic number is never read in isolation.
+# Measured on the ten real exam CSVs in csv_pipeline/qlik/data/real/exam
+# (41,106 scans, 4,747 visits, Jan 2024), visits segmented on StepCount resets:
+#   per-scan mean 1.75 min  ·  scans/visit mean 8.6, median 7
+#   visit scan-time mean 15.1 min  ·  visit WALL-CLOCK mean 21.7, median 18.3
+#   intra-visit gap between consecutive scans: mean 49.5s, median 19s (3% zero)
+REAL_REF = {
+    'scan_min':        1.75,
+    'scans_per_visit': 8.6,
+    'visit_scan_min':  15.08,
+    'visit_wall_min':  21.67,
+    'visit_wall_med':  18.33,
+    'intra_gap_s':     49.5,
+}
+
 lines = []
 lines += [
     '=' * _W,
@@ -1700,8 +1799,15 @@ if not df_exam_all.empty and 'BodyPart' in df_exam_all.columns:
         + ('>> good spread' if entropy/max_entropy > 0.7 else '<< skewed — check orchestration model'),
     ]
 
-# ── 4. EXAMINATION DURATION ───────────────────────────────────────────────────
-lines += ['', _HR, ' 4. EXAMINATION DURATION (minutes)', _HR]
+# ── 4. PER-SEQUENCE DURATION ─────────────────────────────────────────────────
+# One exam row = one SCAN (one MSR_100 -> MSR_104 span), NOT one examination.
+# This section used to be titled "EXAMINATION DURATION", and a mean of 1.9 min
+# read to anyone who knows MRI as a model that is off by 10x — a radiologist's
+# "examination" is the patient's whole visit, which is section 4a below and is
+# ~20 min in the real data. Both numbers are correct; only the label was wrong.
+lines += ['', _HR, ' 4. PER-SEQUENCE (SINGLE SCAN) DURATION (minutes)', _HR]
+lines += [f'  One row = one scan, not one examination. Real reference: '
+          f'{REAL_REF["scan_min"]:.2f} min/scan.']
 if not df_exam_all.empty and 'duration' in df_exam_all.columns:
     dur_all = df_exam_all['duration'].dropna().values / 60.0
     dur_all = dur_all[(dur_all > 0) & (dur_all < 4000/60)]
@@ -1735,6 +1841,75 @@ if not df_exam_all.empty and 'duration' in df_exam_all.columns:
             f'  Quality flags: {n_short} exams <1 min ({_pct(n_short,len(dur_all))}),  '
             f'{n_long} exams >60 min ({_pct(n_long,len(dur_all))})',
         ]
+
+# ── 4a. PER-EXAMINATION (PATIENT VISIT) DURATION ─────────────────────────────
+# The aggregate a clinician means by "how long is an MRI examination": every
+# scan for one patient, plus the dead time between those scans.
+#
+# Three different numbers, kept separate because they answer different things:
+#   scan time  = sum of sequence durations. What the examination MODEL predicts.
+#   wall clock = last endTime - first startTime. What the scanner is occupied
+#                for, and what a scheduler needs. scan time PLUS the pauses.
+#   the gap between them is the intra-visit dead time — planning, positioning,
+#   breath-hold coaching, contrast. Real data: 30.4% of examination wall clock.
+lines += ['', _HR, ' 4a. PER-EXAMINATION (PATIENT VISIT) DURATION (minutes)', _HR]
+if (not df_exam_all.empty
+        and {'duration', 'startTime', 'endTime', 'PatientID', 'SN'}.issubset(df_exam_all.columns)):
+    _v = df_exam_all.copy()
+    _v['_s'] = pd.to_datetime(_v['startTime'], errors='coerce')
+    _v['_e'] = pd.to_datetime(_v['endTime'], errors='coerce')
+    _v['_d'] = pd.to_numeric(_v['duration'], errors='coerce')
+    _v = _v.dropna(subset=['_s', '_e', '_d'])
+    if _v.empty:
+        lines.append('  No parseable start/end times — cannot aggregate to visits.')
+    else:
+        _g = _v.groupby(_VISIT_KEYS)
+        _visit = pd.DataFrame({
+            'n_scans':  _g.size(),
+            'scan_sec': _g['_d'].sum(),
+            'first':    _g['_s'].min(),
+            'last':     _g['_e'].max(),
+        })
+        _visit['wall_sec'] = (_visit['last'] - _visit['first']).dt.total_seconds()
+        _visit = _visit[(_visit['wall_sec'] > 0) & (_visit['wall_sec'] < 6 * 3600)]
+        _sc = _visit['scan_sec'].values / 60.0
+        _wc = _visit['wall_sec'].values / 60.0
+        _ns = _visit['n_scans'].values
+        _dead_share = 1.0 - (_visit['scan_sec'].sum() / max(1.0, _visit['wall_sec'].sum()))
+
+        def _cmp(v, ref):
+            """Signed % difference against the real-data reference."""
+            return f'{100 * (v - ref) / ref:+.0f}% vs real'
+
+        lines += [
+            f'  Visits (SN x PatientID): {len(_visit):,}',
+            '',
+            f'  {"":<26} {"mean":>7} {"median":>7} {"p90":>7}   {"real mean":>9}  {"delta":>14}',
+            f'  {"scans per visit":<26} {_ns.mean():>7.1f} {np.median(_ns):>7.0f} '
+            f'{np.percentile(_ns,90):>7.0f}   {REAL_REF["scans_per_visit"]:>9.1f}  '
+            f'{_cmp(_ns.mean(), REAL_REF["scans_per_visit"]):>14}',
+            f'  {"scan time (model)":<26} {_sc.mean():>7.1f} {np.median(_sc):>7.1f} '
+            f'{np.percentile(_sc,90):>7.1f}   {REAL_REF["visit_scan_min"]:>9.1f}  '
+            f'{_cmp(_sc.mean(), REAL_REF["visit_scan_min"]):>14}',
+            f'  {"WALL CLOCK (occupancy)":<26} {_wc.mean():>7.1f} {np.median(_wc):>7.1f} '
+            f'{np.percentile(_wc,90):>7.1f}   {REAL_REF["visit_wall_min"]:>9.1f}  '
+            f'{_cmp(_wc.mean(), REAL_REF["visit_wall_min"]):>14}',
+            '',
+            f'  Intra-visit dead time: {100*_dead_share:.1f}% of wall clock '
+            f'(real 30.4%).',
+        ]
+        if _dead_share < 0.05:
+            lines += [
+                '  << NO DEAD TIME BETWEEN SCANS. The generator advances the clock by',
+                '     the scan duration alone, so scan N+1 starts exactly where scan N',
+                '     ended. Real scans are separated by a median 19s / mean 49.5s gap.',
+                '     Per-scan durations can be perfect and the EXAMINATION still comes',
+                '     out ~35% short, because a visit is scans + gaps.',
+            ]
+        _wall_err = abs(_wc.mean() - REAL_REF['visit_wall_min']) / REAL_REF['visit_wall_min']
+        if _wall_err > 0.15:
+            lines.append(f'  !! Examination wall clock is {100*_wall_err:.0f}% off the real '
+                         f'mean — this is the number a clinician judges the model by.')
 
 # ── 4b. DURATION BY SEQUENCE TYPE ────────────────────────────────────────────
 # Verifies Workstream A: a scout should be much shorter than a TSE/SPACE.
@@ -1865,10 +2040,10 @@ if not df_ex_all.empty and 'timediff' in df_ex_all.columns:
     ]
 
 # ── 8. STEP COUNT (scans per patient) ────────────────────────────────────────
-lines += ['', _HR, ' 8. SCANS PER PATIENT (StepCount)', _HR]
+lines += ['', _HR, ' 8. SCANS PER PATIENT VISIT (StepCount)', _HR]
 if not df_exam_all.empty and 'StepCount' in df_exam_all.columns:
     # Max StepCount per patient = number of scans that patient had
-    sc = df_exam_all.groupby('PatientID')['StepCount'].max()
+    sc = df_exam_all.groupby(_VISIT_KEYS)['StepCount'].max()
     vals = sc.values
     lines += [
         f'  mean: {vals.mean():.1f}  std: {vals.std():.1f}  '
@@ -1918,7 +2093,10 @@ lines += ['', _HR, ' 11. WEEKDAY PATIENT LOAD PATTERN', _HR]
 if not df_exam_all.empty and 'startTime' in df_exam_all.columns:
     df_exam_all['_dow'] = pd.to_datetime(df_exam_all['startTime']).dt.day_name()
     dow_order = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
-    dow_counts = df_exam_all.groupby('_dow')['PatientID'].nunique()
+    # nunique over (SN, PatientID) pairs — a bare PatientID.nunique() merges
+    # the same synthetic id across all 20 scanners. See _VISIT_KEYS above.
+    dow_counts = (df_exam_all.drop_duplicates(subset=_VISIT_KEYS + ['_dow'])
+                             .groupby('_dow').size())
     for dow in dow_order:
         if dow in dow_counts:
             bar = '█' * int(dow_counts[dow] / max(dow_counts.values) * 30)
@@ -1949,7 +2127,7 @@ if not df_exam_all.empty:
             flags.append('[ORCH MODEL]  UNKNOWN body region {:.0%} — step-03 body-group normalization may need expanding'.format(unknown_pct))
 
     if 'StepCount' in df_exam_all.columns:
-        sc_mean = df_exam_all.groupby('PatientID')['StepCount'].max().mean()
+        sc_mean = df_exam_all.groupby(_VISIT_KEYS)['StepCount'].max().mean()
         if sc_mean > 15:
             flags.append('[EXAM MODEL]  Mean step count {:.1f} — model may not be generating END tokens (Stage 4 issue)'.format(sc_mean))
 

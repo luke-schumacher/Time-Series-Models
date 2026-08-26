@@ -1,0 +1,520 @@
+<title>Two Minutes or Twenty</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f5f7f9; --panel:#ffffff; --ink:#131a22; --ink-2:#3f4b59; --muted:#657283;
+  --rule:#dbe2ea; --rule-2:#eef2f6;
+  --accent:#2a78d6; --accent-soft:#e4eefb;
+  --warn:#d9541f; --warn-soft:#fceee7;
+  --pass:#177f5c; --pass-soft:#e3f4ee;
+  --scan:#2a78d6; --gap:#b9c6d6;
+  --shadow:0 1px 2px rgba(19,26,34,.05), 0 8px 24px -18px rgba(19,26,34,.35);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme: dark;
+    --bg:#11161c; --panel:#171e26; --ink:#e6ecf2; --ink-2:#b3bfcd; --muted:#8d9bab;
+    --rule:#252f3a; --rule-2:#1d252e;
+    --accent:#4a92e8; --accent-soft:#152738;
+    --warn:#f07a45; --warn-soft:#301a11;
+    --pass:#2fb98a; --pass-soft:#0f2a22;
+    --scan:#4a92e8; --gap:#3c4a5a;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#11161c; --panel:#171e26; --ink:#e6ecf2; --ink-2:#b3bfcd; --muted:#8d9bab;
+  --rule:#252f3a; --rule-2:#1d252e;
+  --accent:#4a92e8; --accent-soft:#152738;
+  --warn:#f07a45; --warn-soft:#301a11;
+  --pass:#2fb98a; --pass-soft:#0f2a22;
+  --scan:#4a92e8; --gap:#3c4a5a;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Source Serif 4", Georgia, serif;
+  font-size:17px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1160px; margin:0 auto; padding:0 28px 96px}
+.col{max-width:660px}
+h1,h2,h3,.eyebrow,.chip,.num,table,.sub,.stat,figcaption,.step-h,.foot{
+  font-family:"IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+}
+.mono,.eyebrow,.chip,.num,td.n,th.n,.k{font-family:"IBM Plex Mono", ui-monospace, monospace}
+
+/* ---------- masthead ---------- */
+header{padding:64px 0 40px; border-bottom:1px solid var(--rule)}
+.kicker{
+  font-family:"IBM Plex Mono", monospace; font-size:11.5px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--muted); margin:0 0 20px;
+}
+h1{
+  font-size:clamp(34px,5.4vw,54px); line-height:1.04; font-weight:600;
+  letter-spacing:-.022em; margin:0 0 22px; text-wrap:balance; max-width:15ch;
+}
+.lede{font-size:20px; line-height:1.55; color:var(--ink-2); margin:0; max-width:62ch}
+.lede b{color:var(--ink); font-weight:600}
+
+/* ---------- sections ---------- */
+section{padding:52px 0; border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.eyebrow{
+  font-size:11.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent); margin:0 0 14px; display:flex; align-items:center; gap:10px;
+}
+.eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
+h2{font-size:clamp(24px,3vw,31px); line-height:1.18; font-weight:600;
+   letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance; max-width:24ch}
+h3{font-size:17px; font-weight:600; letter-spacing:-.005em; margin:34px 0 10px}
+p{margin:0 0 16px}
+.col p:last-child{margin-bottom:0}
+strong{font-weight:600}
+a{color:var(--accent)}
+
+/* ---------- chips ---------- */
+.chip{
+  display:inline-flex; align-items:center; gap:7px; font-size:11px; font-weight:600;
+  letter-spacing:.08em; text-transform:uppercase; padding:4px 9px; border-radius:3px;
+  border:1px solid transparent; white-space:nowrap; vertical-align:2px;
+}
+.chip::before{content:""; width:6px; height:6px; border-radius:50%; background:currentColor}
+.chip.ok{color:var(--pass); background:var(--pass-soft); border-color:color-mix(in srgb,var(--pass) 26%,transparent)}
+.chip.bad{color:var(--warn); background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn) 26%,transparent)}
+.chip.info{color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb,var(--accent) 26%,transparent)}
+
+/* ---------- figure ---------- */
+figure{margin:34px 0 0; background:var(--panel); border:1px solid var(--rule);
+       border-radius:6px; box-shadow:var(--shadow); overflow:hidden}
+.figbody{padding:26px 26px 8px; overflow-x:auto}
+svg{display:block; min-width:760px; width:100%; height:auto}
+.rowlab{font-family:"IBM Plex Sans",sans-serif; font-size:12.5px; font-weight:600; fill:var(--ink)}
+.rowsub{font-family:"IBM Plex Mono",monospace; font-size:10.5px; fill:var(--muted)}
+.scan{fill:var(--scan)}
+.gap{fill:var(--gap)}
+.tick{stroke:var(--rule); stroke-width:1}
+.tickl{font-family:"IBM Plex Mono",monospace; font-size:10.5px; fill:var(--muted); text-anchor:middle}
+.endr{stroke:var(--ink); stroke-width:1.5}
+.ends{stroke:var(--warn); stroke-width:1.5}
+.endl{font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600}
+.endl.real{fill:var(--ink)} .endl.synth{fill:var(--warn)}
+.short{stroke:var(--warn); stroke-width:1.2; stroke-dasharray:none; fill:none}
+figcaption{padding:14px 26px 20px; border-top:1px solid var(--rule-2);
+           font-size:13.5px; line-height:1.55; color:var(--muted)}
+.legend{display:flex; gap:20px; flex-wrap:wrap; padding:0 26px 18px; font-size:12.5px;
+        font-family:"IBM Plex Sans",sans-serif; color:var(--ink-2)}
+.legend span{display:inline-flex; align-items:center; gap:8px}
+.sw{width:22px; height:11px; border-radius:2px; display:inline-block}
+
+/* ---------- tables ---------- */
+.tablewrap{margin:28px 0 0; overflow-x:auto; border:1px solid var(--rule);
+           border-radius:6px; background:var(--panel); box-shadow:var(--shadow)}
+table{border-collapse:collapse; width:100%; font-size:14px; min-width:620px}
+caption{text-align:left; padding:16px 20px 0; font-size:12.5px; color:var(--muted);
+        font-family:"IBM Plex Sans",sans-serif}
+th,td{padding:10px 14px; text-align:left; border-bottom:1px solid var(--rule-2)}
+thead th{font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted);
+         font-weight:600; border-bottom:1px solid var(--rule); white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; font-size:13.5px}
+td.k{font-size:13px; color:var(--ink)}
+tr.hl td{background:var(--warn-soft)}
+tr.hl td.k{font-weight:600}
+.d-bad{color:var(--warn); font-weight:600}
+.d-ok{color:var(--pass); font-weight:600}
+
+/* ---------- scorecard ---------- */
+.cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:30px 0 0}
+.card{background:var(--panel); border:1px solid var(--rule); border-radius:6px;
+      padding:20px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:10px}
+.card .stat{font-family:"IBM Plex Mono",monospace; font-size:30px; font-weight:600;
+            letter-spacing:-.02em; line-height:1; font-variant-numeric:tabular-nums}
+.card .sub{font-size:13px; color:var(--muted); line-height:1.5}
+.card h3{margin:0; font-size:13px; letter-spacing:.02em}
+.card.bad{border-left:3px solid var(--warn)}
+.card.ok{border-left:3px solid var(--pass)}
+
+/* ---------- steps ---------- */
+ol.steps{list-style:none; counter-reset:s; padding:0; margin:30px 0 0;
+         display:flex; flex-direction:column; gap:0}
+ol.steps li{counter-increment:s; display:grid; grid-template-columns:44px 1fr; gap:18px;
+            padding:22px 0; border-top:1px solid var(--rule)}
+ol.steps li::before{
+  content:counter(s); font-family:"IBM Plex Mono",monospace; font-size:13px; font-weight:600;
+  color:var(--accent); background:var(--accent-soft); border-radius:4px;
+  width:30px; height:30px; display:grid; place-items:center; margin-top:2px;
+}
+.step-h{font-size:17px; font-weight:600; margin:0 0 6px; letter-spacing:-.005em;
+        display:flex; gap:10px; align-items:baseline; flex-wrap:wrap}
+ol.steps p{margin:0 0 10px; font-size:15.5px; color:var(--ink-2)}
+ol.steps p:last-child{margin-bottom:0}
+.meta{font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted);
+      letter-spacing:.02em}
+
+/* ---------- code / run order ---------- */
+pre{background:var(--panel); border:1px solid var(--rule); border-radius:6px;
+    padding:16px 18px; overflow-x:auto; margin:22px 0 0;
+    font-family:"IBM Plex Mono",monospace; font-size:13px; line-height:1.7; color:var(--ink-2)}
+pre b{color:var(--ink); font-weight:600}
+.note{border-left:2px solid var(--accent); padding:2px 0 2px 18px; margin:26px 0 0;
+      color:var(--ink-2); font-size:15.5px}
+.foot{margin-top:44px; padding-top:22px; border-top:1px solid var(--rule);
+      font-size:12.5px; color:var(--muted); line-height:1.7}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="kicker">Examination duration model · standing after the 2026-08-21 checkpoint</p>
+  <h1>Two minutes or twenty?</h1>
+  <p class="lede">Georg is right that an MRI examination runs about twenty minutes, and right that
+  something is off — but not the thing he suspected. Our <b>2 minutes is per scan</b>, and per scan
+  we are accurate. Aggregate to the examination, which is what he meant, and the synthetic day comes
+  out <b>~30% short</b> — because the generator puts <b>no time at all</b> between one scan and the next.
+  That gap is now sampled from the real distribution, which brings the examination back to
+  <b>21.2 minutes</b> against a real 21.7.</p>
+</header>
+
+<section>
+  <p class="eyebrow">The measurement</p>
+  <h2>Both numbers were correct. Only the label was wrong.</h2>
+  <div class="col">
+    <p>The step-07 report has a section headed <span class="mono">EXAMINATION DURATION</span> that
+    reads <span class="mono">mean: 1.9</span> minutes. One row of the exam CSV is one <em>scan</em> —
+    a single <span class="mono">MSR_100 → MSR_104</span> span — not one examination. A radiologist's
+    "examination" is the patient's whole visit: every scan they receive, plus the dead time between
+    those scans.</p>
+    <p>Measured on the ten real scanners we hold locally (41,106 scans, 4,747 visits, January 2024):</p>
+  </div>
+
+  <div class="cards">
+    <div class="card ok">
+      <h3>Per scan <span class="chip ok">matches</span></h3>
+      <div class="stat">1.75 min</div>
+      <p class="sub">Real mean, 105 s. Our synthetic run: 1.75–1.9 min. This is the number that was
+      being read as a 10× error, and it isn't one.</p>
+    </div>
+    <div class="card ok">
+      <h3>Per examination, real</h3>
+      <div class="stat">21.7 min</div>
+      <p class="sub">Mean wall clock, first scan start to last scan end. Median 18.3, p90 38.4.
+      This is Georg's twenty minutes, and it is in our own data.</p>
+    </div>
+    <div class="card ok">
+      <h3>Per examination, ours <span class="chip ok">fixed</span></h3>
+      <div class="stat">21.2 min</div>
+      <p class="sub">Was ~14–15 min, scans only, every intra-visit gap exactly zero. Now sampled
+      from the real per-scan-type distribution: median 19.2 min, 33.9% dead time against a real
+      30.4%.</p>
+    </div>
+  </div>
+
+  <figure>
+    <div class="figbody">
+      <svg viewBox="0 0 1120 180" role="img" aria-label="A real 21.7-minute examination is nine scans separated by eight gaps; the synthetic one is eight scans back to back, ending at 15.2 minutes.">
+        <defs><marker id="a" viewBox="0 0 8 8" refX="4" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="var(--warn)" stroke-width="1.2"/></marker></defs>
+        <text class="rowlab" x="0" y="26">Real</text>
+        <text class="rowsub" x="0" y="70">9 scans</text>
+        <text class="rowsub" x="0" y="84">+ 8 gaps</text>
+        <text class="rowlab" x="0" y="100">Ours</text>
+        <text class="rowsub" x="0" y="144">8 scans</text>
+        <text class="rowsub" x="0" y="158">+ 0 gaps</text>
+      <line class="tick" x1="46.0" y1="18" x2="46.0" y2="146"/><text class="tickl" x="46.0" y="162">0</text>
+      <line class="tick" x1="250.3" y1="18" x2="250.3" y2="146"/><text class="tickl" x="250.3" y="162">5</text>
+      <line class="tick" x1="454.7" y1="18" x2="454.7" y2="146"/><text class="tickl" x="454.7" y="162">10</text>
+      <line class="tick" x1="659.0" y1="18" x2="659.0" y2="146"/><text class="tickl" x="659.0" y="162">15</text>
+      <line class="tick" x1="863.4" y1="18" x2="863.4" y2="146"/><text class="tickl" x="863.4" y="162">20</text>
+      <rect class="scan" x="46.0" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="117.5" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="151.2" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="222.8" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="256.5" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="328.0" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="361.7" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="433.2" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="467.0" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="538.5" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="572.2" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="643.7" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="677.4" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="749.0" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="782.7" y="30" width="71.5" height="26" rx="2"/>
+      <rect class="gap" x="854.2" y="30" width="33.7" height="26" rx="2"/>
+      <rect class="scan" x="887.9" y="30" width="71.5" height="26" rx="2"/>
+      <line class="endr" x1="959.4" y1="24" x2="959.4" y2="62"/>
+      <text class="endl real" x="967.4" y="48">21.7 min</text>
+      <rect class="scan" x="46.0" y="104" width="77.7" height="26" rx="2"/>
+      <rect class="scan" x="123.7" y="104" width="77.7" height="26" rx="2"/>
+      <rect class="scan" x="201.3" y="104" width="77.7" height="26" rx="2"/>
+      <rect class="scan" x="279.0" y="104" width="77.7" height="26" rx="2"/>
+      <rect class="scan" x="356.6" y="104" width="77.7" height="26" rx="2"/>
+      <rect class="scan" x="434.3" y="104" width="77.7" height="26" rx="2"/>
+      <rect class="scan" x="511.9" y="104" width="77.7" height="26" rx="2"/>
+      <rect class="scan" x="589.6" y="104" width="77.7" height="26" rx="2"/>
+      <line class="ends" x1="667.2" y1="98" x2="667.2" y2="136"/>
+      <text class="endl synth" x="675.2" y="122">15.2 min</text>
+      <path class="short" d="M 669.2 148 L 957.4 148" marker-start="url(#a)" marker-end="url(#a)"/>
+      </svg>
+    </div>
+    <div class="legend">
+      <span><i class="sw" style="background:var(--scan)"></i> scan — what the duration model predicts</span>
+      <span><i class="sw" style="background:var(--gap)"></i> gap between scans — median 19 s, mean 49.5 s in real data</span>
+    </div>
+    <figcaption>One examination, drawn to scale on a shared minute axis. In real data <strong>30.4% of
+    examination wall clock is the gap between scans</strong> — planning, positioning, breath-hold
+    coaching, contrast. In the generated data that share is <strong>0.5%</strong>, and the residual
+    0.5% is only the handover between patients leaking in at the edges.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <p class="eyebrow">Root cause</p>
+  <h2>The clock only ever advances by the scan.</h2>
+  <div class="col">
+    <p>In <span class="mono">07_generate_synthetic_data.py</span>, each generated scan returns
+    <span class="mono">t = msr_start_t + duration_sec</span>, and the per-patient loop feeds that
+    straight back in as the next scan's start. Scan <i>N+1</i> therefore begins at the exact instant
+    scan <i>N</i> ends. Nothing in the generator ever models the pause between two sequences of the
+    same examination.</p>
+    <p>This is not a duration-model error. The examination model is trained on, and only responsible
+    for, the <span class="mono">MSR_100 → MSR_104</span> span. The gap belongs to the generator, the
+    same way the patient-handover exchange block does — and the handover <em>is</em> modelled, which
+    is why the number looks fine between patients and vanishes inside them.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Gap between consecutive scans, measured directly on both timelines</caption>
+      <thead><tr><th>Gap</th><th class="n">n</th><th class="n">mean</th><th class="n">median</th><th class="n">zero</th></tr></thead>
+      <tbody>
+        <tr><td class="k">Real — inside one visit</td><td class="n">36,338</td><td class="n">49.5 s</td><td class="n">19 s</td><td class="n">3.0%</td></tr>
+        <tr class="hl"><td class="k">Ours — inside one visit</td><td class="n">24,186</td><td class="n">0.0 s</td><td class="n">0 s</td><td class="n">100%</td></tr>
+        <tr><td class="k">Real — patient handover</td><td class="n">4,509</td><td class="n">663 s</td><td class="n">355 s</td><td class="n">—</td></tr>
+        <tr><td class="k">Ours — patient handover</td><td class="n">3,369</td><td class="n">534 s</td><td class="n">437 s</td><td class="n">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">The per-visit figures above come from the most recent synthetic export held locally
+  (ten scanners). The structural cause is unchanged in the current generator — I read the code path —
+  and the new section 4a added to step 07 prints the exact figure for the next run, with the real
+  reference beside it.</p>
+</section>
+
+<section>
+  <p class="eyebrow">Standing</p>
+  <h2>How good the model actually is, in three levels.</h2>
+  <div class="col">
+    <p>The three levels answer different questions, and the model scores very differently on each.
+    Reporting only the first is what has made this look healthier than it is.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Held-out validation, 3,956 sequences, 2026-08-21 checkpoint</caption>
+      <thead><tr><th>Level</th><th>Question</th><th class="n">Result</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="k">Shape</td>
+          <td>Does a scout come out shorter than a SPACE?</td>
+          <td class="n">13× spread<br>bias 0.91–1.00</td>
+          <td><span class="chip ok">good</span></td>
+        </tr>
+        <tr>
+          <td class="k">Accuracy</td>
+          <td>Does it beat a protocol lookup table?</td>
+          <td class="n">17.8 s MAE<br>vs 16.2 s</td>
+          <td><span class="chip bad">loses by 1.6 s</span></td>
+        </tr>
+        <tr class="hl">
+          <td class="k">Parameters</td>
+          <td>Do the 267 SUT parameters do anything?</td>
+          <td class="n">0.000 s</td>
+          <td><span class="chip bad">contribute nothing</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="col" style="max-width:660px">Level 3 is the one that matters, and it is the whole point of this fork</h3>
+  <div class="col">
+    <p>Permutation importance over 272 inputs returns two live features and 270 dead ones:
+    <span class="mono">protocol</span> at 60.9 s and <span class="mono">sequence_type</span> at 19.7 s.
+    Every SUT parameter, plus <span class="mono">body_region</span> and
+    <span class="mono">serial_idx</span>, sits at 0.0 s. Perturbing all 267 parameters threefold moves
+    the prediction by 0.000 s (max 0.003 s). <strong>The model is a protocol lookup table</strong> —
+    and, at 17.8 s against the lookup table's 16.2 s, a slightly worse one.</p>
+    <p>That is not because the parameters lack signal. On the same data, step 03e's tabular model over
+    89 admissible parameters reaches <strong>9.7 s MAE</strong>, beating the protocol oracle's 13.2 s.
+    Roughly <strong>8 seconds of MAE is sitting on the table</strong>, unused by the network.</p>
+  </div>
+
+  <h3 class="col" style="max-width:660px">And the prescribed fix has already been tried</h3>
+  <div class="col">
+    <p>Step 06 has been printing one remedy for this: inject the conditioning token per-position into
+    the duration encoder, mirroring <span class="mono">duration_seq_type_bias</span>. That code exists.
+    <span class="mono">duration_cond_bias</span> is in <span class="mono">sequence_generator.py</span>,
+    and the file's hash in the training manifest
+    (<span class="mono">ecf0d7a…</span>) matches the current commit — so this checkpoint <em>was</em>
+    trained with it, and the channel is still dead.</p>
+    <p>So it is no longer a wiring problem, and retraining the same objective will not fix it. The
+    leading explanation is credit assignment: <span class="mono">duration_protocol_bias</span> is a
+    direct 1,620-row per-position lookup that already explains 76% of held-out variance, so the
+    gradient reaching the 277-dimensional conditioning path dies early. Step 06 now prints
+    <span class="mono">‖W‖</span> for that layer, which settles it on the next run without another
+    training cycle.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Also in this run</p>
+  <h2>Four other gaps worth naming before the next meeting.</h2>
+  <div class="tablewrap">
+    <table>
+      <caption>Synthetic output against its reference. Rows 1–2 are measured on the ten real
+      scanner exports; the body-region rows are against the training pkl itself (51,321 sequences),
+      which is the distribution the orchestration model is supposed to reproduce.</caption>
+      <thead><tr><th>What</th><th class="n">Reference</th><th class="n">Ours</th><th class="n">Delta</th></tr></thead>
+      <tbody>
+        <tr class="hl"><td class="k">Aborted scans (“Stopped by User”)</td><td class="n">3.6%</td><td class="n">26.4%</td><td class="n d-bad">7×</td></tr>
+        <tr><td class="k">Scans over 10 minutes</td><td class="n">0.06%</td><td class="n">1.3–3.5%</td><td class="n d-bad">20–60×</td></tr>
+        <tr><td class="k">Body region · UNKNOWN</td><td class="n">4.5%</td><td class="n">21.7%</td><td class="n d-bad">4.8×</td></tr>
+        <tr><td class="k">Body region · HEAD</td><td class="n">25.1%</td><td class="n">38.7%</td><td class="n d-bad">+54%</td></tr>
+        <tr><td class="k">Body region · ABDOMEN</td><td class="n">26.8%</td><td class="n">16.4%</td><td class="n d-bad">−39%</td></tr>
+        <tr><td class="k">Body region · LEG + ARM</td><td class="n">15.7%</td><td class="n">2.5%</td><td class="n d-bad">−84%</td></tr>
+        <tr><td class="k">Body region · CHEST</td><td class="n">4.8%</td><td class="n">12 rows</td><td class="n d-bad">absent</td></tr>
+        <tr><td class="k">Total predicted duration (held-out)</td><td class="n">383,744 s</td><td class="n">365,681 s</td><td class="n d-ok">−4.7%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="col">
+    <p style="margin-top:22px">The heavy duration tail is already costing us: four of twenty scanners
+    hit the 13-hour day budget and dropped patients, with the generator itself reporting that
+    "generated durations are longer than real ones". Note also that step 06 <strong>skipped the
+    baseline entirely</strong> this run — the old checkpoint has 21 serial embeddings against this
+    one's 10 — so criteria 2 and 3 carry no old-vs-new delta at all. And the exchange and
+    orchestration checkpoints driving day assembly are fifteen days old and were trained on the
+    <em>other</em> pkl.</p>
+  </div>
+</section>
+
+<section>
+  <p class="eyebrow">Changed this session</p>
+  <h2>What the next clean run will show that this one couldn't.</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>File</th><th>Change</th></tr></thead>
+      <tbody>
+        <tr><td class="k">05_feature_analysis.py</td><td>The 350×350 annotated heatmap is replaced by a ranked correlation-with-duration chart plus a legible top-20 collinearity matrix. Constant columns (<span class="mono">CT2</span>, <span class="mono">trigger_mode</span>) are named and dropped instead of printing as NaN bands. Spearman added alongside Pearson, since most parameter columns are zero-inflated.</td></tr>
+        <tr><td class="k">05_feature_analysis.py</td><td>Permutation importance now records the spread across repeats and derives a <strong>noise floor</strong>, so "0.0 s" is reported as <em>inside measurement noise</em> rather than as a rank. The 272-bar chart becomes two panels: the live features, then every feature on one symlog axis where the pile-up at zero is the visible fact.</td></tr>
+        <tr><td class="k">06_compare_models.py</td><td>When the conditioning token reads dead, it now prints <span class="mono">‖duration_cond_bias‖</span> and branches: still zero-init → retrain; trained and still dead → it is the objective, not the wiring.</td></tr>
+        <tr><td class="k">07_generate_synthetic_data.py</td><td>New section 4a reports duration <strong>per patient visit</strong> — scans, scan time, and wall clock — each against the real reference. Section 4 is renamed to say plainly that it is per scan.</td></tr>
+        <tr><td class="k">data/intra_visit_gap.py <span class="chip info">new</span></td><td>Builds the intra-visit pause prior from the real exam CSVs (visits segmented on <span class="mono">StepCount</span> resets), stores it as per-sequence-type quantile grids, and samples by inverse CDF. Degrades to a dead sampler — today's back-to-back behaviour, loudly announced — if the CSV directory is missing, so a bad mount cannot fail a six-hour run.</td></tr>
+        <tr><td class="k">07_generate_synthetic_data.py</td><td>The scan loop draws the sequence type first, then the pause preceding it, budget-checks at the post-gap clock and only commits the pause if the scan actually happens. Each serial reports gaps inserted, mean, and share of examination wall clock against the real 30.4%.</td></tr>
+        <tr><td class="k">07_generate_synthetic_data.py</td><td>Per-patient aggregates now group on <span class="mono">(SN, PatientID)</span>. The synthetic id carries the date but not the serial, so the old <span class="mono">groupby('PatientID')</span> collapsed 7,563 visits into ~624 — which is why section 8 read 12.6 scans per patient against a generator drawing Poisson(8).</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="meta" style="margin-top:18px">395 tests + 769 subtests green (17 new). Both charts rendered and inspected at production shape (350 features, 272 permutation rows).</p>
+</section>
+
+<section>
+  <p class="eyebrow">Next</p>
+  <h2>Ranked by how much each moves Georg's number.</h2>
+  <ol class="steps">
+    <li>
+      <div>
+        <p class="step-h">Put the gap back between scans <span class="chip ok">done</span>
+           <span class="meta">AlternatingPipeline/data/intra_visit_gap.py · 17 tests</span></p>
+        <p>The pause is now drawn per scan from a 101-point empirical quantile grid built at startup
+        from the real exam CSVs, keyed on the sequence type it <em>precedes</em> — the pause before a
+        scout is a stage change and runs 5–10× longer than the rest (median 168 s vs 19 s), which a
+        single mean or a fitted lognormal would erase, along with the 3% of gaps that are genuinely
+        zero. Simulated end to end against the real prior: examination wall clock
+        <strong>14.1 → 21.2 min</strong> (real 21.7), dead-time share 0 → 33.9% (real 30.4%).</p>
+        <p><strong>Watch on the next run:</strong> days are now ~30% longer in their exam portion and
+        will push harder against the 13-hour budget that already truncates four scanners. If
+        truncation gets worse, the scans-per-visit draw — currently Poisson(8) against a real 8.6 with
+        a shorter tail — is the thing to adjust, not the gap.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <p class="step-h">Settle the dead-conditioning question with one number <span class="meta">one cell · step 06</span></p>
+        <p>Run the new diagnostic before spending another training cycle. If
+        <span class="mono">‖duration_cond_bias‖ ≈ 0</span>, the parameter never trained and a retrain
+        is the fix. If it is non-zero — which is what I expect — the wiring is fine and the objective
+        is the problem, so go to step 3 and do not retrain the same loss again.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <p class="step-h">Take the protocol shortcut out of the target, not the model <span class="meta">the real experiment</span></p>
+        <p>Train the duration head on the residual against the protocol mean — <span class="mono">log(duration)
+        − log(protocol_mean)</span> — or run a straight ablation with
+        <span class="mono">num_protocols=None</span>. Either removes the cheap route to the loss and
+        makes the parameters the only way to reduce it. Score against the protocol oracle at 16.2 s,
+        per Görtler; the tabular model's 9.7 s is the stretch target.</p>
+        <p>This is the experiment that tells us whether the network can use sequence parameters at
+        all, which is the question this entire fork exists to answer.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <p class="step-h">Decide the fork explicitly: one checkpoint is being asked to be two models</p>
+        <p>The generative day-simulator <em>wants</em> protocol as an input — it is what makes the
+        durations realistic, and that was a deliberate call. The transferable duration model must not
+        have it, because customers rename and copy protocols freely and a protocol-keyed model
+        transfers to no one. Those are two models with two feature sets. Right now one checkpoint is
+        doing the first job and failing the second, and every "the parameters do nothing" result is
+        really a result about that conflict.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <p class="step-h">Bring the abort rate down from 26.4% to ~3%</p>
+        <p>Training oversamples <span class="mono">MRI_MSR_34</span> sequences 2× (1,640 duplicated
+        into 49,005), which puts aborts at ~6.7% of the training distribution — not enough on its own
+        to explain 26.4%, so the decoder is over-generating the abort token beyond what oversampling
+        accounts for. Worth confirming against the token-level validation perplexity before changing
+        the sampler.</p>
+      </div>
+    </li>
+    <li>
+      <div>
+        <p class="step-h">Retrain exchange and orchestration on the seqparams pkl</p>
+        <p>Both are fifteen days old and were fitted on the 67 MB <span class="mono">csv_pipeline</span>
+        pkl while examination now runs on the 414 MB seqparams one. That mismatch is also why step 06
+        could not load a baseline, leaving criteria 2 and 3 with no comparison at all.</p>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<section>
+  <p class="eyebrow">Run order</p>
+  <h2>For the clean run.</h2>
+  <pre><b>04_train_models.py</b>      retrain — clears the 341-vs-267 feature drift between
+                        config.py and the checkpoint, and gives step 06's new
+                        diagnostic a checkpoint built by today's code
+<b>05_feature_analysis.py</b>  new charts; set TOP_N_CORR / TOP_N_PERM to taste
+<b>06_compare_models.py</b>    new duration_cond_bias verdict; set BASELINE_CHECKPOINT
+                        to a use_sut_conditioning=False ablation to get a real
+                        old-vs-new delta instead of a skip
+<b>07_generate_synthetic_data.py</b>
+                        new section 4a — the per-examination number</pre>
+    <p class="note">Step 03 does not need re-running; the pkl is unchanged since 2026-08-21.</p>
+  <p class="foot">Real-data references throughout are measured on the ten real scanner exports in
+  <span class="mono">csv_pipeline/qlik/data/real/exam</span> — 41,106 scans across 4,747 visits,
+  January 2024 — with visits segmented on <span class="mono">StepCount</span> resets. The synthetic
+  run covers twenty scanners, ten of which have no real counterpart in that comparison set.
+  Model figures are from the 2026-08-21 08:06 checkpoint, held-out set of 3,956 sequences.</p>
+</section>
+
+</div>

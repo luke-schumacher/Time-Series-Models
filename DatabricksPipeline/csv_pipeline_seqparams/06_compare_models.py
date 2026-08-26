@@ -455,10 +455,45 @@ elif _cond_only and max(_cond_only) < 1.0:
           "channel that arrives solely via the conditioning token moves it by <1s.")
     print("     body_region alone has a ~2.3x real duration spread, so this is a model "
           "defect, not a property of the data.")
-    print("     REMEDY: inject the conditioning token per-position into the duration "
-          "encoder, mirroring duration_seq_type_bias (zero-init keeps existing "
-          "checkpoints loadable). That unblocks body_region, serial_idx AND the SUT "
-          "features together — retraining for the SUT features alone would not fix it.")
+
+    # WHICH remedy depends on whether the per-position route already exists in
+    # this checkpoint, and until 2026-08-21 this block could not tell: it printed
+    # "add duration_cond_bias" unconditionally, including on checkpoints that
+    # already had it trained. Reading the weight settles it in one line and turns
+    # a dead result into one of two different next actions.
+    _dcb = getattr(new_model, 'duration_cond_bias', None)
+    if _dcb is None:
+        print("     REMEDY (wiring): inject the conditioning token per-position into the "
+              "duration encoder, mirroring duration_seq_type_bias (zero-init keeps "
+              "existing checkpoints loadable). That unblocks body_region, serial_idx "
+              "AND the SUT features together — retraining for the SUT features alone "
+              "would not fix it.")
+    else:
+        _w = _dcb.weight.detach()
+        _wn = float(_w.norm().item())
+        _bn = float(_dcb.bias.detach().norm().item()) if _dcb.bias is not None else 0.0
+        _seq = getattr(new_model, 'duration_seq_type_bias', None)
+        _seqn = float(_seq.weight.detach().norm().item()) if _seq is not None else float('nan')
+        print(f"     duration_cond_bias IS present in this checkpoint: "
+              f"||W||={_wn:.4f}  ||b||={_bn:.4f}   "
+              f"(duration_seq_type_bias ||W||={_seqn:.4f} for scale)")
+        if _wn < 1e-6:
+            print("     => it is still at its zero init, i.e. this checkpoint was trained "
+                  "BEFORE the per-position route existed, or the parameter never received "
+                  "gradient. REMEDY: retrain with the current code and re-run this cell.")
+        else:
+            print("     => the per-position route EXISTS and WAS TRAINED, and the channel is "
+                  "still dead. So this is no longer a wiring problem and retraining the "
+                  "same objective will not fix it: the head has a cheaper route to the "
+                  "same loss. duration_protocol_bias is a direct 1,620-row lookup that "
+                  "already explains ~76% of held-out variance, so gradient on the "
+                  "conditioning path dies early.")
+            print("     REMEDY (objective, not wiring): remove the shortcut from the "
+                  "TARGET rather than from the model — train the duration head on the "
+                  "residual against the protocol mean, or ablate protocol entirely and "
+                  "score parameters against the protocol oracle. Step 03e already showed "
+                  "the parameters reach 9.7s MAE tabularly vs the oracle's 13.2s, so the "
+                  "signal is present and unused.")
 else:
     print("  Conditioning token IS live — at least one cond-token-only channel moves the "
           "duration head. A null result for the SUT features is then about those "
