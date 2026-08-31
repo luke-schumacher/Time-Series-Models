@@ -39,13 +39,26 @@ spark.conf.set("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
 
 RESUME = os.environ.get('RESUME', '1') != '0'
 
-def _existing_rows(path):
-    """Row count of an already-written CSV, or None if there is not one."""
+# Columns this notebook is currently expected to emit — see step 02 for the
+# incident that made this necessary. A CSV missing any of them was written by
+# older code and is rebuilt rather than skipped. Add to this list whenever you
+# add a column to the output.
+_SCHEMA_MARKERS = ('token_name', 'token_id', 'timediff', 'total_time',
+                   'BodyGroup_from', 'BodyGroup_to', 'PTAB', 'Direction')
+
+
+def _existing_output(path):
+    """(row_count, missing_columns) for an already-written CSV, else None."""
     if not os.path.exists(path):
         return None
     try:
         with open(path) as handle:
-            return max(sum(1 for _ in handle) - 1, 0)   # minus the header
+            header = handle.readline()
+            if not header:
+                return (0, list(_SCHEMA_MARKERS))
+            cols = {c.strip() for c in header.rstrip('\n').split(',')}
+            return (sum(1 for _ in handle), [m for m in _SCHEMA_MARKERS
+                                             if m not in cols])
     except OSError:
         return None
 
@@ -367,10 +380,16 @@ for serial_number in SERIAL_NUMBERS:
     print(f"{'='*60}")
 
     csv_path = f"{EXCHANGE_OUTPUT_DIR}/DATA_{serial_number}.csv"
-    _done    = _existing_rows(csv_path) if RESUME else None
-    if _done:
-        print(f"  Already built ({_done:,} rows) — skipping. Set RESUME=0 to rebuild.")
-        continue
+    _prev    = _existing_output(csv_path) if RESUME else None
+    if _prev:
+        _rows, _missing = _prev
+        if _missing:
+            print(f"  Existing CSV is from older code (missing "
+                  f"{', '.join(_missing)}) — rebuilding.")
+        elif _rows:
+            print(f"  Already built ({_rows:,} rows) — skipping. "
+                  f"Set RESUME=0 to rebuild.")
+            continue
 
     # Query just this serial from Spark to avoid collecting the full month of
     # exchange rows to the driver up front.

@@ -47,6 +47,49 @@ from glob import glob
 
 import pandas as pd
 
+# ---------------------------------------------------------------------------
+# Sequence-family vocabulary.
+#
+# Step 03 classifies the raw `Sequence` string ('%SiemensSeq%\\fl3d_vibe') into
+# one of 15 families before training; step 05 emits the family name directly
+# ('vibe'). Real CSVs from step 02 keep the raw string, so without this the two
+# sides never share a single Exam_Sequence value and every Qlik comparison on
+# that dimension renders two disjoint bar sets.
+#
+# Prefer the canonical copy in ../config.py. The qlik/ folder is also shipped
+# standalone (see README), where that import isn't available — hence the
+# inline fallback. Keep the fallback in sync with config.py:136-160.
+# ---------------------------------------------------------------------------
+try:
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from config import classify_sequence_type, ID_TO_SEQUENCE_TYPE
+    _VOCAB_SOURCE = '../config.py'
+except ImportError:
+    SEQUENCE_TYPE_VOCAB = {
+        'other': 0, 'scout': 1, 'localizer': 2, 'tse': 3, 'space': 4,
+        'haste': 5, 'gre': 6, 'flash': 7, 'epi': 8, 'tfl': 9, 'tirm': 10,
+        'vibe': 11, 'dixon': 12, 'swi': 13, 'medic': 14,
+    }
+    _SEQUENCE_TYPE_KEYS = [
+        'localizer', 'scout', 'haste', 'space', 'tirm', 'vibe', 'dixon',
+        'medic', 'swi', 'tfl', 'flash', 'tse', 'gre',
+    ]
+    ID_TO_SEQUENCE_TYPE = {v: k for k, v in SEQUENCE_TYPE_VOCAB.items()}
+
+    def classify_sequence_type(raw):
+        """Map a raw `Sequence` string to a SEQUENCE_TYPE_VOCAB id."""
+        s = str(raw or '').lower()
+        if not s:
+            return SEQUENCE_TYPE_VOCAB['other']
+        for key in _SEQUENCE_TYPE_KEYS:
+            if key in s:
+                return SEQUENCE_TYPE_VOCAB[key]
+        if 'ep2d' in s or 'epi' in s or 'bold' in s or 'diff' in s or 'dwi' in s:
+            return SEQUENCE_TYPE_VOCAB['epi']
+        return SEQUENCE_TYPE_VOCAB['other']
+
+    _VOCAB_SOURCE = 'inline fallback'
+
 
 HERE         = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR     = os.path.join(HERE, 'data')
@@ -160,6 +203,38 @@ def _backfill_exam_sourceid(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _normalize_exam_labels(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Align the two categorical columns whose *spelling* differs between the
+    real and synthetic exam CSVs. Both are pure formatting mismatches — Qlik
+    treats 'Head' and 'HEAD' as two unrelated dimension values, so a
+    side-by-side chart on either column shows two disjoint sets of bars and
+    reads as "the model generated nothing".
+
+      BodyGroup  real 'Head' / synthetic 'HEAD'  -> upper-case both sides.
+                 Upper-case is the target because the exchange table already
+                 uses it (Exch_BodyGroup_from_text / _to_text), so after this
+                 all three body-region columns share one vocabulary and can
+                 cross-filter.
+
+      Sequence   real '%SiemensSeq%\\fl3d_vibe' / synthetic 'vibe'  -> run the
+                 canonical step-03 classifier over both sides. A plain prefix
+                 strip is not enough: the synthetic vocabulary is coarser
+                 ('vibe' covers fl3d_vibe, fl3d_ce and fl3d_rd), so only the
+                 real classifier reproduces the families the model was
+                 actually trained on. Idempotent on already-classified values,
+                 which is why it is safe to apply to the synthetic side too.
+    """
+    if 'BodyGroup' in df.columns:
+        df['BodyGroup'] = df['BodyGroup'].astype('string').str.upper()
+
+    if 'Sequence' in df.columns:
+        df['Sequence'] = df['Sequence'].map(
+            lambda v: ID_TO_SEQUENCE_TYPE[classify_sequence_type(v)]
+        )
+    return df
+
+
 def _add_exam_sequence_count(df: pd.DataFrame) -> pd.DataFrame:
     """
     Add a per-visit total measurement count, replicated to every row of the
@@ -228,6 +303,9 @@ def consolidate(kind: str) -> str | None:
         # sample_idx rename so SequenceCount can group on the raw column.
         combined = _backfill_exam_sourceid(combined)
         combined = _add_exam_sequence_count(combined)
+        # Align BodyGroup casing and Sequence vocabulary across the two
+        # sides so Qlik can actually compare them on those dimensions.
+        combined = _normalize_exam_labels(combined)
 
     # Drop misleading single-side / constant-valued columns
     to_drop = [c for c in DROP_COLS[kind] if c in combined.columns]

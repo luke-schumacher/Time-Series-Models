@@ -418,18 +418,40 @@ _OUTCOMES = {}
 # ---------------------------------------------------------------------------
 RESUME = os.environ.get('RESUME', '1') != '0'
 
-def _existing_rows(path):
-    """Row count of an already-written CSV, or None if there is not one.
+# Columns this notebook is currently expected to emit. A CSV on DBFS that is
+# missing any of them was written by OLDER code and must be rebuilt, however
+# many rows it has.
+#
+# WHY. The first version of this resume check asked only "does a non-empty CSV
+# exist", and the 2026-08-31 re-run happily skipped nine serials whose files
+# dated from 2026-08-04 — before commit 28ed58b added `sourceID`. The bundle
+# went out with nine scanners whose finish codes had to be reconstructed from
+# FinishEvent downstream, which folds every abort into MRI_MSR_34. Resuming
+# must never silently mix two schemas.
+#
+# ADD TO THIS LIST whenever you add a column to the output. That is what makes
+# stale files rebuild instead of surviving.
+_SCHEMA_MARKERS = ('sourceID', 'timediff', 'customer_idx', 'sample_idx',
+                   'predicted_mu', 'BodyGroup', 'StepCount', 'PTAB')
 
-    Counts newlines rather than parsing. These files carry up to 90+ coil
-    columns and the only question being asked is whether this serial already
-    finished, so pandas would be the expensive way to ask it.
+
+def _existing_output(path):
+    """(row_count, missing_columns) for an already-written CSV, else None.
+
+    Rows are counted by newline rather than parsed: these files carry up to
+    90+ coil columns and the only questions being asked are whether this
+    serial finished and whether the current code wrote it.
     """
     if not os.path.exists(path):
         return None
     try:
         with open(path) as handle:
-            return max(sum(1 for _ in handle) - 1, 0)   # minus the header
+            header = handle.readline()
+            if not header:
+                return (0, list(_SCHEMA_MARKERS))
+            cols = {c.strip() for c in header.rstrip('\n').split(',')}
+            return (sum(1 for _ in handle), [m for m in _SCHEMA_MARKERS
+                                             if m not in cols])
     except OSError:
         return None
 
@@ -443,11 +465,17 @@ for serial_number in SERIAL_NUMBERS:
     _OUTCOMES[serial_number] = 'no eventlog rows in window'
 
     csv_path = f"{EXAM_OUTPUT_DIR}/DATA_{serial_number}.csv"
-    _done    = _existing_rows(csv_path) if RESUME else None
-    if _done:
-        _OUTCOMES[serial_number] = _done
-        print(f"  Already built ({_done:,} rows) — skipping. Set RESUME=0 to rebuild.")
-        continue
+    _prev    = _existing_output(csv_path) if RESUME else None
+    if _prev:
+        _rows, _missing = _prev
+        if _missing:
+            print(f"  Existing CSV is from older code (missing "
+                  f"{', '.join(_missing)}) — rebuilding.")
+        elif _rows:
+            _OUTCOMES[serial_number] = _rows
+            print(f"  Already built ({_rows:,} rows) — skipping. "
+                  f"Set RESUME=0 to rebuild.")
+            continue
 
     # -------------------------------------------------------------------------
     # Load eventlog for this serial

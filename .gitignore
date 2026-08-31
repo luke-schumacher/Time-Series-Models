@@ -85,3 +85,6 @@ desktop.ini
 # Backup files
 *.bak
 *.backup
+
+# Built deck output + deps only (no source in this folder as of 2026-08-31)
+presentation/web/

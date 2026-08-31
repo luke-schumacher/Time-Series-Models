@@ -1,0 +1,1026 @@
+<meta charset="utf-8">
+<title>MRI Digital Twin Handover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;500;600;700&family=Noto+Serif:wght@400;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root{
+  --ink:#10202E; --ink-2:#31465A; --muted:#5F7385;
+  --paper:#F5F8FA; --surface:#FFFFFF; --sunk:#EDF2F6;
+  --rule:#CFDBE4; --rule-soft:#E4EBF1;
+  --navy:#003087; --teal:#00807F; --amber:#C4560A; --ox:#8E1B30;
+  --navy-wash:#EAEFFA; --teal-wash:#DFF1F0; --amber-wash:#FBEEE3; --ox-wash:#F9E9EC;
+  --display:"Libre Franklin","Franklin Gothic","Helvetica Neue",Arial,sans-serif;
+  --body:"Noto Serif","Liberation Serif",Georgia,serif;
+  --mono:"JetBrains Mono","Liberation Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#E3EDF4; --ink-2:#B2C5D3; --muted:#8397A8;
+    --paper:#0B1520; --surface:#111F2C; --sunk:#16273614;
+    --sunk:#162736; --rule:#27394B; --rule-soft:#1C2B3A;
+    --navy:#89ADEF; --teal:#3FC7C4; --amber:#FF9247; --ox:#F0798E;
+    --navy-wash:#152540; --teal-wash:#0F2E31; --amber-wash:#2E2013; --ox-wash:#2E1620;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#E3EDF4; --ink-2:#B2C5D3; --muted:#8397A8;
+  --paper:#0B1520; --surface:#111F2C; --sunk:#162736;
+  --rule:#27394B; --rule-soft:#1C2B3A;
+  --navy:#89ADEF; --teal:#3FC7C4; --amber:#FF9247; --ox:#F0798E;
+  --navy-wash:#152540; --teal-wash:#0F2E31; --amber-wash:#2E2013; --ox-wash:#2E1620;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--body); font-size:16px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1060px;margin:0 auto;padding:0 28px 96px}
+
+/* ---------- masthead ---------- */
+.mast{padding:56px 0 30px;border-bottom:3px solid var(--navy)}
+.kicker{
+  font-family:var(--display);font-size:11px;font-weight:600;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--teal);margin-bottom:16px;
+}
+h1{
+  font-family:var(--display);font-weight:700;font-size:48px;line-height:1.03;
+  letter-spacing:-.024em;margin:0 0 14px;text-wrap:balance;color:var(--ink);
+}
+.dek{font-size:19px;line-height:1.5;color:var(--ink-2);margin:0;max-width:60ch}
+.byline{
+  font-family:var(--display);font-size:12.5px;color:var(--muted);margin-top:24px;
+  display:flex;flex-wrap:wrap;gap:6px 22px;
+}
+.byline b{color:var(--ink-2);font-weight:600}
+
+/* ---------- stat strip ---------- */
+.stats{display:flex;flex-wrap:wrap;gap:1px;background:var(--rule);
+  border:1px solid var(--rule);margin:0 0 44px;border-top:none}
+.stat{flex:1 1 150px;background:var(--surface);padding:16px 18px 15px}
+.stat .n{font-family:var(--display);font-weight:700;font-size:29px;line-height:1;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat .l{font-family:var(--display);font-size:10.5px;font-weight:500;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);margin-top:8px;line-height:1.35}
+.stat.ok .n{color:var(--teal)} .stat.warn .n{color:var(--amber)}
+.stat.bad .n{color:var(--ox)} .stat.neutral .n{color:var(--navy)}
+
+/* ---------- sections ---------- */
+section{display:grid;grid-template-columns:132px minmax(0,1fr);gap:34px;
+  padding:38px 0 6px;border-top:1px solid var(--rule-soft)}
+section:first-of-type{border-top:none}
+.rail{font-family:var(--display);padding-top:6px}
+.rail .num{font-size:12px;font-weight:700;color:var(--navy);letter-spacing:.06em;
+  font-variant-numeric:tabular-nums;display:block}
+.rail .lbl{font-size:10.5px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);margin-top:7px;display:block;line-height:1.45}
+.col{min-width:0}
+h2{font-family:var(--display);font-weight:700;font-size:26px;line-height:1.2;
+  letter-spacing:-.017em;margin:0 0 16px;text-wrap:balance}
+h3{font-family:var(--display);font-weight:600;font-size:17px;line-height:1.3;
+  margin:30px 0 10px;letter-spacing:-.005em}
+p{margin:0 0 15px;max-width:70ch}
+.lead{font-size:17.5px;line-height:1.58;color:var(--ink-2)}
+strong{font-weight:600}
+code,.m{font-family:var(--mono);font-size:.855em;background:var(--sunk);
+  padding:1px 5px;border-radius:2px;color:var(--ink);white-space:nowrap}
+a{color:var(--navy)}
+
+ul{margin:0 0 16px;padding-left:0;list-style:none;max-width:70ch}
+ul li{position:relative;padding-left:20px;margin-bottom:9px}
+ul li::before{content:"";position:absolute;left:2px;top:.62em;width:6px;height:6px;
+  background:var(--teal)}
+ol{margin:0 0 16px;padding-left:22px;max-width:70ch}
+ol li{margin-bottom:9px}
+
+/* ---------- callout ---------- */
+.note{border-left:4px solid var(--amber);background:var(--amber-wash);
+  padding:16px 20px;margin:0 0 22px}
+.note .t{font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--amber);margin-bottom:7px}
+.note p{margin:0 0 8px;font-size:15px}
+.note p:last-child{margin:0}
+
+/* ---------- plate (charts + tables) ---------- */
+.plate{background:var(--surface);border:1px solid var(--rule);margin:24px 0 26px}
+.plate-hd{padding:15px 20px 13px;border-bottom:1px solid var(--rule-soft)}
+.plate-hd .t{font-family:var(--display);font-weight:600;font-size:14.5px;letter-spacing:-.005em}
+.plate-hd .s{font-family:var(--display);font-size:12px;color:var(--muted);margin-top:4px}
+.plate-bd{padding:20px;overflow-x:auto}
+.plate-ft{padding:0 20px 16px;font-size:13px;color:var(--muted);line-height:1.5}
+svg{display:block;max-width:100%;height:auto}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 22px;padding:0 20px 16px;
+  font-family:var(--display);font-size:12px;color:var(--ink-2)}
+.legend i{display:inline-block;width:22px;height:9px;margin-right:7px;
+  vertical-align:1px;border-radius:1px}
+
+/* ---------- tables ---------- */
+table{width:100%;border-collapse:collapse;font-family:var(--display);font-size:13.5px}
+th{text-align:left;font-weight:600;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);padding:0 12px 9px 0;
+  border-bottom:1.5px solid var(--rule);white-space:nowrap}
+td{padding:9px 12px 9px 0;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;
+  padding-right:16px;white-space:nowrap}
+td.k{font-weight:500;color:var(--ink)}
+.pill{display:inline-block;font-family:var(--display);font-size:10px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:2px;
+  white-space:nowrap}
+.p-ok{background:var(--teal-wash);color:var(--teal)}
+.p-warn{background:var(--amber-wash);color:var(--amber)}
+.p-bad{background:var(--ox-wash);color:var(--ox)}
+.p-nav{background:var(--navy-wash);color:var(--navy)}
+
+/* ---------- bar rows (body groups) ---------- */
+.bars{font-family:var(--display);font-size:12.5px}
+.bar-row{display:flex;align-items:center;gap:12px;margin-bottom:7px}
+.bar-lb{flex:0 0 96px;text-align:right;color:var(--ink-2);font-weight:500;
+  font-size:11.5px;letter-spacing:.02em}
+.bar-tr{flex:1 1 auto;min-width:0}
+.bar{height:9px;margin-bottom:3px;border-radius:1px}
+.bar.r{background:var(--teal)} .bar.s{background:var(--amber)}
+.bar-vl{flex:0 0 96px;font-family:var(--mono);font-size:11px;color:var(--muted);
+  font-variant-numeric:tabular-nums;line-height:1.35}
+.bar-vl em{font-style:normal;color:var(--ink-2)}
+
+/* ---------- failure blocks ---------- */
+.fail{border:1px solid var(--rule);border-left:5px solid var(--ox);
+  background:var(--surface);padding:22px 24px 8px;margin:0 0 24px}
+.fail.minor{border-left-color:var(--amber)}
+.fail-hd{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 14px;margin-bottom:12px}
+.fail-id{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ox);
+  background:var(--ox-wash);padding:3px 8px;letter-spacing:.04em}
+.fail.minor .fail-id{color:var(--amber);background:var(--amber-wash)}
+.fail-hd h3{margin:0;font-size:19px;flex:1 1 260px}
+.fail dl{margin:0;font-size:15px}
+.fail dt{font-family:var(--display);font-size:10.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--muted);margin-top:16px}
+.fail dd{margin:6px 0 0;max-width:70ch}
+.fail dd p{margin:0 0 9px}
+.fail dd p:last-child{margin:0}
+
+/* ---------- ranked steps ---------- */
+.step{display:grid;grid-template-columns:36px minmax(0,1fr);gap:16px;
+  padding:16px 0;border-top:1px solid var(--rule-soft)}
+.step:first-child{border-top:none;padding-top:4px}
+.step-n{font-family:var(--display);font-weight:700;font-size:20px;color:var(--navy);
+  line-height:1.15;font-variant-numeric:tabular-nums}
+.step h4{font-family:var(--display);font-weight:600;font-size:16px;margin:0 0 6px;
+  letter-spacing:-.005em}
+.step p{margin:0 0 8px;font-size:14.5px;line-height:1.55}
+.step .meta{font-family:var(--display);font-size:11px;color:var(--muted);
+  display:flex;flex-wrap:wrap;gap:5px 14px}
+.step .meta b{color:var(--ink-2);font-weight:600}
+
+/* ---------- run order ---------- */
+.run{font-family:var(--display);font-size:13.5px}
+.run-row{display:flex;gap:14px;align-items:baseline;padding:8px 0;
+  border-bottom:1px solid var(--rule-soft)}
+.run-row:last-child{border-bottom:none}
+.run-n{flex:0 0 22px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--navy)}
+.run-f{flex:0 0 auto;font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.run-d{flex:1 1 200px;color:var(--muted);font-size:12.5px}
+
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px}
+.mini{border-top:2px solid var(--rule);padding-top:12px}
+.mini h4{font-family:var(--display);font-weight:600;font-size:14px;margin:0 0 7px}
+.mini p{font-size:14px;line-height:1.5;margin:0 0 7px}
+
+.sign{margin-top:44px;padding-top:26px;border-top:3px solid var(--navy);
+  font-size:16px;color:var(--ink-2);max-width:70ch}
+.sign p{max-width:70ch}
+
+@media (max-width:820px){
+  section{grid-template-columns:1fr;gap:14px;padding-top:30px}
+  .rail{display:flex;gap:14px;align-items:baseline;padding-top:0}
+  .rail .lbl{margin-top:0}
+  h1{font-size:36px} .wrap{padding:0 18px 64px}
+}
+
+/* ---------- print / PDF ---------- */
+@page{size:A4;margin:16mm 14mm 15mm;
+  @bottom-right{content:counter(page);font-family:"Libre Franklin",sans-serif;
+    font-size:8pt;color:#5F7385}
+  @bottom-left{content:"MRI Digital Twin — Handover, 31 August 2026";
+    font-family:"Libre Franklin",sans-serif;font-size:8pt;color:#5F7385}}
+@media print{
+  :root{--ink:#10202E;--ink-2:#31465A;--muted:#5F7385;--paper:#FFFFFF;
+    --surface:#FFFFFF;--sunk:#EDF2F6;--rule:#CFDBE4;--rule-soft:#E4EBF1;
+    --navy:#003087;--teal:#00807F;--amber:#C4560A;--ox:#8E1B30;
+    --navy-wash:#EAEFFA;--teal-wash:#DFF1F0;--amber-wash:#FBEEE3;--ox-wash:#F9E9EC}
+  body{font-size:9.6pt;line-height:1.5;background:#fff}
+  .wrap{max-width:none;padding:0}
+  .mast{padding-top:0}
+  h1{font-size:27pt} .dek{font-size:11.5pt}
+  h2{font-size:15pt} h3{font-size:11pt}
+  section{grid-template-columns:66px minmax(0,1fr);gap:20px;padding-top:20px}
+  .rail .lbl{font-size:8.5px;letter-spacing:.06em}
+  /* plates run full-bleed in print: charts and tables get the whole measure */
+  .plate{margin-left:-86px}
+  .plate-bd{padding:14px 16px}
+  /* a tall plate must be allowed to split, or it leaves a blank page behind it */
+  .plate{break-inside:auto}
+  svg,tr,.legend,.plate-ft,.fail,.step,.note,.bar-row,.run-row,.mini{break-inside:avoid}
+  thead,.plate-hd{break-inside:avoid}
+  h2,h3,h4{break-after:avoid} .plate-hd{break-after:avoid}
+  .stats{margin-bottom:26px}
+  .stat{flex:1 1 100px;padding:12px 13px 11px}
+  .stat .n{font-size:19pt}
+  .grid2{grid-template-columns:1fr 1fr;gap:18px}
+  .pagebreak{break-before:page}
+  a{text-decoration:none;color:var(--ink)}
+}
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="kicker">Siemens Healthineers &middot; MRI Customer Twin &middot; Final status</div>
+  <h1>MRI Digital Twin Handover</h1>
+  <p class="dek">A generative model that invents a realistic month of activity for an MRI
+  scanner site — which patients arrive, what gets scanned, in what order, and how long
+  every step takes. This is where it stands, what it gets wrong, and what to do next.</p>
+  <div class="byline">
+    <span><b>Author</b> Luke Schumacher</span>
+    <span><b>Date</b> 31 August 2026</span>
+    <span><b>Repo</b> Time-Series-Models @ <span class="m">28ed58b</span></span>
+    <span><b>Status</b> Working, with one blocking defect</span>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="stat neutral"><div class="n">3</div><div class="l">Transformer models</div></div>
+  <div class="stat neutral"><div class="n">20</div><div class="l">Scanners generated</div></div>
+  <div class="stat ok"><div class="n">395</div><div class="l">Tests green</div></div>
+  <div class="stat warn"><div class="n">51,321</div><div class="l">Training sequences</div></div>
+  <div class="stat bad"><div class="n">344<span style="font-size:.55em;font-weight:600">/346</span></div><div class="l">Model inputs that do nothing</div></div>
+</div>
+
+<!-- ============================= 1 ============================= -->
+<section>
+  <div class="rail"><span class="num">01</span><span class="lbl">Read this<br>first</span></div>
+  <div class="col">
+    <h2>Where we are</h2>
+    <p class="lead">Two of the three models are good enough to ship. The third — the one that
+    predicts how long a scan takes — is a very expensive lookup table, and that is the whole
+    story of the last two months.</p>
+
+    <h3>What works</h3>
+    <p>The <strong>patient-handover model</strong> is the win column. Its event mix matches
+    real scanners almost exactly, and the day-level volume is right: synthetic visits contain
+    7.9 scans on average against a real 8.6, with an identical median of 8. Scan lengths are
+    the right order of magnitude, aborted scans appear at roughly the right rate (3.0% against
+    a real 3.6%), and the whole pipeline runs end to end without hand-holding.</p>
+
+    <h3>What does not</h3>
+    <p>Three things, in order of how much they matter:</p>
+    <ul>
+      <li><strong>The duration model ignores every input except the protocol name</strong> —
+      and the protocol name is the one input it is not allowed to use. It is beaten on
+      held-out data by a spreadsheet.</li>
+      <li><strong>Anatomy collapses.</strong> Real scanners cover 56 body parts; we generate 7.
+      Eight of the fifteen real body groups are never produced at all.</li>
+      <li><strong>Scans run too long and visits have no pauses.</strong> 4.5% of generated scans
+      exceed ten minutes; in real data it is 0.06%. Downstream, the day is over-filled and the
+      simulator throws away patients it had already scheduled.</li>
+    </ul>
+
+    <h3>The single next move</h3>
+    <p>Stop adding features to the duration model. Change what it is asked to predict: train it
+    on the <em>residual</em> against the protocol average, or remove the protocol input entirely
+    and score against it. The evidence that this will work is in §5 — fitted as a plain table
+    on the same rows, the sequence parameters reach 9.7 s of error against the protocol
+    benchmark's 13.2 s. The signal is in the data. The network is not using it.</p>
+
+    <div class="note">
+      <div class="t">Before you ship the next Qlik bundle</div>
+      <p>The 40 CSVs in <span class="m">~/Downloads/Results 31082026</span> are <strong>two
+      generator fixes behind the code</strong>. Measured on those files: 100% of the gaps
+      between scans inside a visit are exactly 0 s (commit <span class="m">c9e8604</span> put
+      that pause back), and the protocol column carries the old eight-name placeholder pool
+      (<span class="m">t1_mprage</span>, <span class="m">t2_flair</span>, …) rather than sampled
+      real protocol names. Their per-scanner row counts do not match the step-07 log from the
+      latest run either — 3,793 rows for scanner 183242 here against 3,574 in the log.</p>
+      <p>They are perfectly usable for the anatomy and event-mix charts. Re-run step 07 on
+      current <span class="m">main</span> and re-download before using them to judge timing.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= 2 ============================= -->
+<section>
+  <div class="rail"><span class="num">02</span><span class="lbl">How it is<br>built</span></div>
+  <div class="col">
+    <h2>Architecture</h2>
+    <p>Real scanner event logs go in at the top; a month of invented-but-plausible scanner
+    activity comes out at the bottom, in exactly the same CSV shape. That shape-match is
+    deliberate: it is what lets the Qlik dashboard put real and synthetic side by side without
+    a single column rename.</p>
+
+    <div class="plate">
+      <div class="plate-hd">
+        <div class="t">The pipeline, top to bottom</div>
+        <div class="s">Numbered boxes are Databricks notebooks. Teal = real data, orange = generated.</div>
+      </div>
+      <div class="plate-bd">
+<svg viewBox="0 0 760 566" width="760" role="img" aria-label="Pipeline architecture diagram" style="font-family:'Libre Franklin',sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7C8FA0"/>
+    </marker>
+  </defs>
+  <g stroke="#7C8FA0" stroke-width="1.4" fill="none" marker-end="url(#ah)">
+    <path d="M 250 52 V 72"/><path d="M 250 126 V 146"/>
+    <path d="M 250 194 V 214"/><path d="M 250 262 V 282"/>
+    <path d="M 250 330 V 338"/><path d="M 250 412 V 430"/>
+    <path d="M 250 478 V 498"/>
+  </g>
+  <g stroke="#00807F" stroke-width="1.4" fill="none" marker-end="url(#ah)">
+    <path d="M 470 172 H 600 V 318"/>
+  </g>
+  <g stroke="#C4560A" stroke-width="1.4" fill="none" marker-end="url(#ah)">
+    <path d="M 470 524 H 498 V 350 H 518"/>
+  </g>
+  <g stroke="#7C8FA0" stroke-width="1.4" fill="none" marker-end="url(#ah)">
+    <path d="M 620 382 V 424"/>
+  </g>
+
+  <!-- sources -->
+  <rect x="30" y="10" width="700" height="42" fill="#EAEFFA" stroke="#003087" stroke-width="1.2"/>
+  <text x="46" y="29" font-size="12.5" font-weight="600" fill="#10202E">Databricks scanner event log</text>
+  <text x="46" y="44" font-size="10.5" fill="#5F7385" font-family="'JetBrains Mono',monospace">eventlog.common_eventlog &#183; examination.examination_workflow &#183; 21 scanners &#183; Jan 2024</text>
+
+  <!-- preprocess -->
+  <rect x="30" y="72" width="210" height="54" fill="#FFFFFF" stroke="#CFDBE4" stroke-width="1.2"/>
+  <text x="44" y="93" font-size="12" font-weight="600" fill="#10202E">01 &#183; Exchange preprocessing</text>
+  <text x="44" y="110" font-size="10" fill="#5F7385">Events between two patients</text>
+  <rect x="260" y="72" width="210" height="54" fill="#FFFFFF" stroke="#CFDBE4" stroke-width="1.2"/>
+  <text x="274" y="93" font-size="12" font-weight="600" fill="#10202E">02 &#183; Exam preprocessing</text>
+  <text x="274" y="110" font-size="10" fill="#5F7385">One row per scan, with coils</text>
+
+  <!-- real csvs -->
+  <rect x="30" y="146" width="440" height="48" fill="#DFF1F0" stroke="#00807F" stroke-width="1.2"/>
+  <text x="44" y="167" font-size="12" font-weight="600" fill="#10202E">Real per-scanner CSVs</text>
+  <text x="44" y="184" font-size="10" fill="#00807F" font-family="'JetBrains Mono',monospace">41,106 exam rows &#183; 120,735 exchange rows</text>
+
+  <!-- 03 -->
+  <rect x="30" y="214" width="440" height="48" fill="#FFFFFF" stroke="#CFDBE4" stroke-width="1.2"/>
+  <text x="44" y="235" font-size="12" font-weight="600" fill="#10202E">03 &#183; Build preprocessed_data.pkl</text>
+  <text x="44" y="252" font-size="10" fill="#5F7385">51,321 examination sequences + 341 MRI sequence parameters</text>
+
+  <!-- 04 -->
+  <rect x="30" y="282" width="440" height="48" fill="#EAEFFA" stroke="#003087" stroke-width="1.2"/>
+  <text x="44" y="303" font-size="12" font-weight="600" fill="#10202E">04 &#183; Train models</text>
+  <text x="44" y="320" font-size="10" fill="#5F7385">One shared transformer backbone, three heads</text>
+
+  <!-- three models -->
+  <rect x="30" y="338" width="138" height="74" fill="#FFFFFF" stroke="#003087" stroke-width="1.2"/>
+  <text x="42" y="357" font-size="11.5" font-weight="700" fill="#003087">Orchestration</text>
+  <text x="42" y="373" font-size="9.5" fill="#31465A">Which body region,</text>
+  <text x="42" y="386" font-size="9.5" fill="#31465A">in what order, all day</text>
+  <text x="42" y="403" font-size="9" fill="#5F7385" font-family="'JetBrains Mono',monospace">3 enc / 4 dec</text>
+
+  <rect x="178" y="338" width="138" height="74" fill="#FFFFFF" stroke="#003087" stroke-width="1.2"/>
+  <text x="190" y="357" font-size="11.5" font-weight="700" fill="#003087">Exchange</text>
+  <text x="190" y="373" font-size="9.5" fill="#31465A">The handover between</text>
+  <text x="190" y="386" font-size="9.5" fill="#31465A">two patients</text>
+  <text x="190" y="403" font-size="9" fill="#00807F" font-family="'JetBrains Mono',monospace">healthy</text>
+
+  <rect x="326" y="338" width="144" height="74" fill="#FFFFFF" stroke="#8E1B30" stroke-width="1.4"/>
+  <text x="338" y="357" font-size="11.5" font-weight="700" fill="#8E1B30">Examination</text>
+  <text x="338" y="373" font-size="9.5" fill="#31465A">The scans inside one</text>
+  <text x="338" y="386" font-size="9.5" fill="#31465A">visit, and their length</text>
+  <text x="338" y="403" font-size="9" fill="#8E1B30" font-family="'JetBrains Mono',monospace">2.1 M params &#183; F1</text>
+
+  <!-- 07 -->
+  <rect x="30" y="430" width="440" height="48" fill="#FFFFFF" stroke="#CFDBE4" stroke-width="1.2"/>
+  <text x="44" y="451" font-size="12" font-weight="600" fill="#10202E">07 &#183; Day simulator</text>
+  <text x="44" y="468" font-size="10" fill="#5F7385">Schedules a day, fills it patient by patient, 13 h budget</text>
+
+  <!-- synthetic -->
+  <rect x="30" y="498" width="440" height="48" fill="#FBEEE3" stroke="#C4560A" stroke-width="1.2"/>
+  <text x="44" y="519" font-size="12" font-weight="600" fill="#10202E">Synthetic per-scanner CSVs</text>
+  <text x="44" y="536" font-size="10" fill="#C4560A" font-family="'JetBrains Mono',monospace">54,233 exam rows &#183; 163,451 exchange rows &#183; Feb 2024</text>
+
+  <!-- right column -->
+  <rect x="518" y="318" width="212" height="64" fill="#FFFFFF" stroke="#CFDBE4" stroke-width="1.2"/>
+  <text x="532" y="339" font-size="12" font-weight="600" fill="#10202E">consolidate.py</text>
+  <text x="532" y="356" font-size="9.5" fill="#5F7385">Merges, prefixes and aligns</text>
+  <text x="532" y="369" font-size="9.5" fill="#5F7385">labels across both sides</text>
+
+  <rect x="518" y="424" width="212" height="64" fill="#EAEFFA" stroke="#003087" stroke-width="1.2"/>
+  <text x="532" y="445" font-size="12" font-weight="600" fill="#10202E">Qlik validation sheet</text>
+  <text x="532" y="462" font-size="9.5" fill="#5F7385">Six charts, real vs synthetic,</text>
+  <text x="532" y="475" font-size="9.5" fill="#5F7385">side by side</text>
+</svg>
+      </div>
+      <div class="plate-ft">All three models are the same transformer: 128-dimensional, 4 attention
+      heads, 3 encoder and 3 decoder layers, 512-wide feed-forward, with a log-space duration
+      head. Small on purpose — the training set is tens of thousands of sequences, not millions.</div>
+    </div>
+
+    <h3>Two pipelines, and why</h3>
+    <p>The repository carries the pipeline twice. <span class="m">csv_pipeline/</span> is the
+    original and owns the exchange and orchestration checkpoints plus the real-data extracts
+    the dashboard compares against. <span class="m">csv_pipeline_seqparams/</span> is a fork
+    that adds 341 MRI sequence parameters — repetition time, slice count, field of view and so
+    on, read out of the <span class="m">MRI_SUT_1005</span> message — to the examination model's
+    conditioning. It was forked rather than modified so a failed experiment could not take the
+    working checkpoints down with it. That decision paid off; see §4.</p>
+
+    <h3>Why the protocol name is not allowed to be an input</h3>
+    <p>This is the constraint that everything else follows from, set with Görtler on
+    31 July 2026. A protocol is a saved state — one sequence plus roughly fifty parameter
+    settings. Customers keep their own protocol trees, copy Siemens presets, rename them in any
+    language, and edit them; copying destroys the link to the original preset. The result is
+    around <strong>3.8 million protocol names across 15,000 customers against only 3,800
+    Siemens presets</strong>. A model keyed on the protocol name learns one site and transfers
+    to none. So the name stays in the data as a <em>label</em> and becomes the benchmark to beat
+    — never a feature.</p>
+  </div>
+</section>
+
+<!-- ============================= 3 ============================= -->
+<section class="pagebreak">
+  <div class="rail"><span class="num">03</span><span class="lbl">Real vs<br>synthetic</span></div>
+  <div class="col">
+    <h2>The scoreboard</h2>
+    <p>Every number below is measured from the CSVs on disk, not carried over from an earlier
+    report. Real is 10 scanners over January 2024; synthetic is 20 scanners over February 2024,
+    from the run currently in <span class="m">~/Downloads/Results 31082026</span>.</p>
+
+    <div class="plate">
+      <div class="plate-hd">
+        <div class="t">Measured comparison</div>
+        <div class="s">41,106 real exam rows against 54,233 synthetic</div>
+      </div>
+      <div class="plate-bd">
+        <table>
+          <thead><tr>
+            <th style="width:36%">Metric</th><th class="n">Real</th><th class="n">Synthetic</th>
+            <th style="width:14%">Verdict</th><th>Note</th>
+          </tr></thead>
+          <tbody>
+            <tr><td class="k">Scans per visit (mean)</td><td class="n">8.6</td><td class="n">7.9</td>
+              <td><span class="pill p-ok">Pass</span></td><td>Medians both 8</td></tr>
+            <tr><td class="k">Aborted by user</td><td class="n">3.61%</td><td class="n">3.03%</td>
+              <td><span class="pill p-ok">Pass</span></td><td>Was 0% a year ago</td></tr>
+            <tr><td class="k">Handover event mix, top 5</td><td class="n">—</td><td class="n">—</td>
+              <td><span class="pill p-ok">Pass</span></td><td>Same set, two ranks swapped</td></tr>
+            <tr><td class="k">Scan duration, median</td><td class="n">88 s</td><td class="n">120 s</td>
+              <td><span class="pill p-warn">Close</span></td><td>+36%</td></tr>
+            <tr><td class="k">Visit wall clock</td><td class="n">22.7 min</td><td class="n">23.4 min</td>
+              <td><span class="pill p-warn">Close</span></td><td>Right for the wrong reason</td></tr>
+            <tr><td class="k">Scan duration, mean</td><td class="n">105 s</td><td class="n">177 s</td>
+              <td><span class="pill p-bad">Fail</span></td><td>+69%</td></tr>
+            <tr><td class="k">Scans over 10 minutes</td><td class="n">0.06%</td><td class="n">4.54%</td>
+              <td><span class="pill p-bad">Fail</span></td><td>76&#215; too many</td></tr>
+            <tr><td class="k">Dead time inside a visit</td><td class="n">33.5%</td><td class="n">0.3%</td>
+              <td><span class="pill p-bad">Fail</span></td><td>Fixed in code, not in these files</td></tr>
+            <tr><td class="k">Handover block, mean</td><td class="n">1,108 s</td><td class="n">520 s</td>
+              <td><span class="pill p-bad">Fail</span></td><td>Long tail lost; medians close</td></tr>
+            <tr><td class="k">Distinct body groups</td><td class="n">15</td><td class="n">7</td>
+              <td><span class="pill p-bad">Fail</span></td><td>8 never generated</td></tr>
+            <tr><td class="k">Distinct body parts</td><td class="n">56</td><td class="n">7</td>
+              <td><span class="pill p-bad">Fail</span></td><td></td></tr>
+            <tr><td class="k">Distinct protocol names</td><td class="n">3,000</td><td class="n">8</td>
+              <td><span class="pill p-bad">Fail</span></td><td>Placeholder pool in these files</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="plate-ft"><strong>The wall clock matches by accident.</strong> A real visit is
+      15.1 min of scanning inside 22.7 min of elapsed time. Ours is 23.3 min of scanning inside
+      23.4 min. Scans are 54% too long and the pauses between them are zero, and the two errors
+      happen to cancel. Do not read that row as a pass.</div>
+    </div>
+
+    <div class="plate">
+      <div class="plate-hd">
+        <div class="t">Scan duration, real against generated</div>
+        <div class="s">Share of scans per half-minute, 41,106 real and 54,233 synthetic</div>
+      </div>
+      <div class="plate-bd">
+<svg viewBox="0 0 770 254" width="770" role="img" aria-label="Duration distribution: real scans concentrate under 3 minutes, synthetic spreads a long tail past 15 minutes" style="font-family:'Libre Franklin',sans-serif">
+  <g stroke="#E4EBF1" stroke-width="1">
+    <line x1="52" y1="214" x2="752" y2="214"/><line x1="52" y1="147.3" x2="752" y2="147.3"/>
+    <line x1="52" y1="80.7" x2="752" y2="80.7"/><line x1="52" y1="14" x2="752" y2="14"/>
+  </g>
+  <g font-size="11" fill="#5F7385" text-anchor="end" font-family="'JetBrains Mono',monospace">
+    <text x="44" y="218">0</text><text x="44" y="151">10</text>
+    <text x="44" y="84">20</text><text x="44" y="17.5">30</text>
+  </g>
+  <text x="10" y="118" font-size="10.5" fill="#5F7385" transform="rotate(-90 10 118)" text-anchor="middle">% of scans</text>
+
+  <path d="M 52.0 214.0 L 52.0 19.3 L 74.6 19.3 L 74.6 137.5 L 97.2 137.5 L 97.2 148.1 L 119.7 148.1 L 119.7 122.1 L 142.3 122.1 L 142.3 149.9 L 164.9 149.9 L 164.9 164.7 L 187.5 164.7 L 187.5 173.0 L 210.1 173.0 L 210.1 189.2 L 232.6 189.2 L 232.6 196.3 L 255.2 196.3 L 255.2 198.2 L 277.8 198.2 L 277.8 204.6 L 300.4 204.6 L 300.4 208.9 L 323.0 208.9 L 323.0 210.2 L 345.5 210.2 L 345.5 211.0 L 368.1 211.0 L 368.1 213.4 L 390.7 213.4 L 390.7 212.8 L 413.3 212.8 L 413.3 213.4 L 435.9 213.4 L 435.9 213.4 L 458.5 213.4 L 458.5 213.9 L 481.0 213.9 L 481.0 213.9 L 503.6 213.9 L 503.6 213.9 L 526.2 213.9 L 526.2 214.0 L 548.8 214.0 L 548.8 213.9 L 571.4 213.9 L 571.4 214.0 L 593.9 214.0 L 593.9 214.0 L 616.5 214.0 L 616.5 214.0 L 639.1 214.0 L 639.1 214.0 L 661.7 214.0 L 661.7 214.0 L 684.3 214.0 L 684.3 214.0 L 706.8 214.0 L 706.8 214.0 L 729.4 214.0 L 729.4 214.0 L 752.0 214.0 Z" fill="#00807F" fill-opacity="0.13"/>
+  <path d="M 52.0 214.0 L 52.0 93.2 L 74.6 93.2 L 74.6 142.7 L 97.2 142.7 L 97.2 143.9 L 119.7 143.9 L 119.7 143.1 L 142.3 143.1 L 142.3 147.3 L 164.9 147.3 L 164.9 157.1 L 187.5 157.1 L 187.5 169.2 L 210.1 169.2 L 210.1 181.8 L 232.6 181.8 L 232.6 190.6 L 255.2 190.6 L 255.2 196.0 L 277.8 196.0 L 277.8 201.5 L 300.4 201.5 L 300.4 203.5 L 323.0 203.5 L 323.0 205.8 L 345.5 205.8 L 345.5 207.5 L 368.1 207.5 L 368.1 208.1 L 390.7 208.1 L 390.7 209.2 L 413.3 209.2 L 413.3 209.9 L 435.9 209.9 L 435.9 210.8 L 458.5 210.8 L 458.5 211.1 L 481.0 211.1 L 481.0 211.6 L 503.6 211.6 L 503.6 211.4 L 526.2 211.4 L 526.2 212.0 L 548.8 212.0 L 548.8 212.2 L 571.4 212.2 L 571.4 212.3 L 593.9 212.3 L 593.9 212.3 L 616.5 212.3 L 616.5 212.5 L 639.1 212.5 L 639.1 212.3 L 661.7 212.3 L 661.7 212.8 L 684.3 212.8 L 684.3 212.7 L 706.8 212.7 L 706.8 213.0 L 729.4 213.0 L 729.4 200.1 L 752.0 200.1 L 752.0 214.0 Z" fill="#C4560A" fill-opacity="0.13"/>
+  <path d="M 52.0 19.3 L 74.6 19.3 L 74.6 137.5 L 97.2 137.5 L 97.2 148.1 L 119.7 148.1 L 119.7 122.1 L 142.3 122.1 L 142.3 149.9 L 164.9 149.9 L 164.9 164.7 L 187.5 164.7 L 187.5 173.0 L 210.1 173.0 L 210.1 189.2 L 232.6 189.2 L 232.6 196.3 L 255.2 196.3 L 255.2 198.2 L 277.8 198.2 L 277.8 204.6 L 300.4 204.6 L 300.4 208.9 L 323.0 208.9 L 323.0 210.2 L 345.5 210.2 L 345.5 211.0 L 368.1 211.0 L 368.1 213.4 L 390.7 213.4 L 390.7 212.8 L 413.3 212.8 L 413.3 213.4 L 435.9 213.4 L 435.9 213.4 L 458.5 213.4 L 458.5 213.9 L 481.0 213.9 L 481.0 213.9 L 503.6 213.9 L 503.6 213.9 L 526.2 213.9 L 526.2 214.0 L 548.8 214.0 L 548.8 213.9 L 571.4 213.9 L 571.4 214.0 L 593.9 214.0 L 593.9 214.0 L 616.5 214.0 L 616.5 214.0 L 639.1 214.0 L 639.1 214.0 L 661.7 214.0 L 661.7 214.0 L 684.3 214.0 L 684.3 214.0 L 706.8 214.0 L 706.8 214.0 L 729.4 214.0 L 729.4 214.0 L 752.0 214.0" fill="none" stroke="#00807F" stroke-width="2"/>
+  <path d="M 52.0 93.2 L 74.6 93.2 L 74.6 142.7 L 97.2 142.7 L 97.2 143.9 L 119.7 143.9 L 119.7 143.1 L 142.3 143.1 L 142.3 147.3 L 164.9 147.3 L 164.9 157.1 L 187.5 157.1 L 187.5 169.2 L 210.1 169.2 L 210.1 181.8 L 232.6 181.8 L 232.6 190.6 L 255.2 190.6 L 255.2 196.0 L 277.8 196.0 L 277.8 201.5 L 300.4 201.5 L 300.4 203.5 L 323.0 203.5 L 323.0 205.8 L 345.5 205.8 L 345.5 207.5 L 368.1 207.5 L 368.1 208.1 L 390.7 208.1 L 390.7 209.2 L 413.3 209.2 L 413.3 209.9 L 435.9 209.9 L 435.9 210.8 L 458.5 210.8 L 458.5 211.1 L 481.0 211.1 L 481.0 211.6 L 503.6 211.6 L 503.6 211.4 L 526.2 211.4 L 526.2 212.0 L 548.8 212.0 L 548.8 212.2 L 571.4 212.2 L 571.4 212.3 L 593.9 212.3 L 593.9 212.3 L 616.5 212.3 L 616.5 212.5 L 639.1 212.5 L 639.1 212.3 L 661.7 212.3 L 661.7 212.8 L 684.3 212.8 L 684.3 212.7 L 706.8 212.7 L 706.8 213.0 L 729.4 213.0 L 729.4 200.1 L 752.0 200.1" fill="none" stroke="#C4560A" stroke-width="2"/>
+
+  <line x1="729.4" y1="10" x2="729.4" y2="222" stroke="#8E1B30" stroke-width="1" stroke-dasharray="3 3"/>
+  <text x="726" y="34" font-size="11" fill="#8E1B30" text-anchor="end" font-weight="600">2.1% of generated scans</text>
+  <text x="726" y="47" font-size="11" fill="#8E1B30" text-anchor="end" font-weight="600">run past 15 min &#183; real: 0.007%</text>
+
+  <g font-size="11" fill="#5F7385" text-anchor="middle" font-family="'JetBrains Mono',monospace">
+    <text x="52" y="232">0</text><text x="142.3" y="232">2</text><text x="232.6" y="232">4</text>
+    <text x="323" y="232">6</text><text x="413.3" y="232">8</text><text x="503.6" y="232">10</text>
+    <text x="593.9" y="232">12</text><text x="684.3" y="232">14</text>
+  </g>
+  <text x="402" y="249" font-size="11" fill="#5F7385" text-anchor="middle">scan duration (minutes)</text>
+</svg>
+      </div>
+      <div class="legend">
+        <span><i style="background:#00807F"></i>Real &#183; 105 s mean, 0.06% over 10 min</span>
+        <span><i style="background:#C4560A"></i>Synthetic &#183; 177 s mean, 4.54% over 10 min</span>
+      </div>
+      <div class="plate-ft">The shapes agree between roughly one and four minutes. They part in
+      both tails: real data has a hard wall at about seven minutes, and 40.7% of real scans finish
+      inside a minute against 28.8% of ours.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= 4 ============================= -->
+<section class="pagebreak">
+  <div class="rail"><span class="num">04</span><span class="lbl">Where it<br>fails</span></div>
+  <div class="col">
+    <h2>Four failures, named</h2>
+    <p>Each one below has been reproduced and root-caused, not guessed at. The identifiers
+    F1&#8211;F4 are referenced again in the ranked next steps in §6.</p>
+
+    <div class="fail">
+      <div class="fail-hd">
+        <span class="fail-id">F1</span>
+        <h3>The duration model ignores every input except the protocol name</h3>
+        <span class="pill p-bad">Blocking</span>
+      </div>
+      <dl>
+        <dt>What we see</dt>
+        <dd><p>Shuffle any one input and measure how far the prediction moves. Of 346
+        conditioning features, exactly two move it: the protocol name and the coarse scan type.
+        The other 344 — every one of the 341 MRI sequence parameters, plus the body region and
+        the scanner's own identity — move it by less than 0.05 s, which is indistinguishable
+        from re-seeding the random number generator.</p></dd>
+
+        <dt>What that costs</dt>
+        <dd><p>Held-out error is <strong>19.1 s</strong>. A plain lookup table holding the
+        average duration per protocol name scores <strong>16.2 s</strong> on the same data. A
+        2.1-million-parameter transformer is losing to a spreadsheet — and it is losing while
+        leaning on the one input it is not allowed to use in production.</p></dd>
+
+        <dt>Why it is not a wiring bug</dt>
+        <dd><p>That was the first hypothesis and it was tested and rejected. The path that
+        carries the conditioning into the duration head exists in the checkpoint and was
+        trained — its weight norm is 1.16, against 1.07 for the scan-type path that
+        demonstrably works. The channel is live and still dead.</p>
+        <p>The likely mechanism is credit assignment, not capacity. A direct 1,620-row
+        protocol lookup already explains 76% of held-out variance, so it is the cheapest way
+        to reduce the loss, and the gradient reaching the 351-dimensional parameter path dies
+        in the first few epochs. <strong>Retraining the same objective will not fix this.</strong></p></dd>
+
+        <dt>Why it is worth fixing rather than abandoning</dt>
+        <dd><p>The signal is provably present. Fitted as an ordinary table on the same rows,
+        the 89 admissible sequence parameters reach <strong>9.7 s</strong> of error against the
+        protocol benchmark's 13.2 s. That clears the &#177;15 s target Görtler named, beats the
+        benchmark, and uses nothing customer-specific. Roughly eight seconds of accuracy is
+        sitting in the data and the network is not touching it.</p></dd>
+      </dl>
+    </div>
+
+    <div class="plate">
+      <div class="plate-hd">
+        <div class="t">What the duration head actually listens to</div>
+        <div class="s">Permutation sweep, 346 features &#215; 5 repeats &#215; 500 held-out scans</div>
+      </div>
+      <div class="plate-bd">
+<svg viewBox="0 0 760 236" width="760" role="img" aria-label="Permutation importance: protocol 61.3 seconds, sequence type 18.0 seconds, and 344 features at zero" style="font-family:'Libre Franklin',sans-serif">
+  <defs>
+    <pattern id="dead" width="5" height="5" patternUnits="userSpaceOnUse">
+      <circle cx="1.6" cy="1.6" r="1.25" fill="#98A9B8"/>
+    </pattern>
+  </defs>
+  <g stroke="#E4EBF1" stroke-width="1">
+    <line x1="160" y1="14" x2="160" y2="196"/><line x1="332" y1="14" x2="332" y2="196"/>
+    <line x1="504" y1="14" x2="504" y2="196"/><line x1="676" y1="14" x2="676" y2="196"/>
+  </g>
+
+  <text x="150" y="41" font-size="12.5" font-weight="600" fill="#10202E" text-anchor="end">protocol name</text>
+  <rect x="160" y="24" width="528" height="24" fill="#8E1B30"/>
+  <text x="698" y="41" font-size="12" font-weight="700" fill="#8E1B30" font-family="'JetBrains Mono',monospace">61.3 s</text>
+
+  <text x="150" y="81" font-size="12.5" font-weight="600" fill="#10202E" text-anchor="end">scan type</text>
+  <rect x="160" y="64" width="155" height="24" fill="#003087"/>
+  <text x="325" y="81" font-size="12" font-weight="700" fill="#003087" font-family="'JetBrains Mono',monospace">18.0 s</text>
+
+  <text x="150" y="121" font-size="12.5" font-weight="600" fill="#10202E" text-anchor="end">the other 344</text>
+  <text x="150" y="136" font-size="10" fill="#5F7385" text-anchor="end">sequence parameters,</text>
+  <text x="150" y="149" font-size="10" fill="#5F7385" text-anchor="end">body region, scanner id</text>
+  <rect x="160" y="107" width="4" height="24" fill="#8E1B30"/>
+  <rect x="160" y="140" width="215" height="40" fill="url(#dead)"/>
+  <rect x="160" y="140" width="215" height="40" fill="none" stroke="#CFDBE4" stroke-width="1"/>
+  <text x="388" y="157" font-size="12" fill="#5F7385">344 features, every one under 0.05 s</text>
+  <text x="388" y="172" font-size="12" fill="#5F7385">— the measurement noise floor</text>
+
+  <g stroke="#CFDBE4" stroke-width="1"><line x1="160" y1="196" x2="700" y2="196"/></g>
+  <g font-size="11" fill="#5F7385" text-anchor="middle" font-family="'JetBrains Mono',monospace">
+    <text x="160" y="211">0</text><text x="332" y="211">20</text>
+    <text x="504" y="211">40</text><text x="676" y="211">60</text>
+  </g>
+  <text x="418" y="228" font-size="11" fill="#5F7385" text-anchor="middle">seconds of extra error when the feature is shuffled</text>
+</svg>
+      </div>
+      <div class="plate-ft">Each dot is one input feature. The two bars are the only channels the
+      model responds to — and the long one is the channel that must be removed before this can
+      ship to a second customer.</div>
+    </div>
+
+    <div class="fail">
+      <div class="fail-hd">
+        <span class="fail-id">F2</span>
+        <h3>Anatomy collapses to seven categories</h3>
+        <span class="pill p-bad">Major</span>
+      </div>
+      <dl>
+        <dt>What we see</dt>
+        <dd><p>Real scanners in this window cover 15 body groups and 56 body parts. We generate
+        7 and 7. <span class="m">UNKNOWN</span> takes 19.5% of generated scans against 2.2% of
+        real ones, and <span class="m">HEAD</span> is over-produced at 40.5% against 25.5%.
+        Knee (6.2% of real work), shoulder, breast, heart, hip, chest, other and whole-body are
+        never generated at all.</p></dd>
+        <dt>Root cause, in two parts</dt>
+        <dd><p><strong>The vocabulary is too small.</strong> The eleven-value body-region list
+        in <span class="m">config.py</span> has no knee and no heart, so step 03 folds brain,
+        liver, knee, lumbar spine, prostate, shoulder and breast into <span class="m">UNKNOWN</span>
+        before training ever sees them.</p>
+        <p><strong>The source field is empty.</strong> <span class="m">BodyPartExamined</span>
+        is null on nearly every exam row. Step 03 tries three guessed key names out of the
+        workflow map and none of them is the real one. It now prints the keys that are actually
+        present, so the next Spark run names the field and the fix is one line.</p></dd>
+      </dl>
+    </div>
+
+    <div class="plate">
+      <div class="plate-hd">
+        <div class="t">Body-group share, real against generated</div>
+        <div class="s">Sorted by real share &#183; 15 groups real, 7 generated</div>
+      </div>
+      <div class="plate-bd">
+        <div class="bars">
+          <div class="bar-row"><div class="bar-lb">Abdomen</div><div class="bar-tr">
+            <div class="bar r" style="width:69.3%"></div><div class="bar s" style="width:41.6%"></div>
+          </div><div class="bar-vl"><em>27.7</em> / 16.6 %</div></div>
+          <div class="bar-row"><div class="bar-lb">Head</div><div class="bar-tr">
+            <div class="bar r" style="width:63.8%"></div><div class="bar s" style="width:100%"></div>
+          </div><div class="bar-vl"><em>25.5</em> / 40.5 %</div></div>
+          <div class="bar-row"><div class="bar-lb">Spine</div><div class="bar-tr">
+            <div class="bar r" style="width:31.0%"></div><div class="bar s" style="width:37.3%"></div>
+          </div><div class="bar-vl"><em>12.4</em> / 14.9 %</div></div>
+          <div class="bar-row"><div class="bar-lb">Pelvis</div><div class="bar-tr">
+            <div class="bar r" style="width:24.6%"></div><div class="bar s" style="width:16.3%"></div>
+          </div><div class="bar-vl"><em>9.9</em> / 6.5 %</div></div>
+          <div class="bar-row"><div class="bar-lb">Knee</div><div class="bar-tr">
+            <div class="bar r" style="width:15.5%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>6.2</em> / <span style="color:#8E1B30">never</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Shoulder</div><div class="bar-tr">
+            <div class="bar r" style="width:9.6%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>3.8</em> / <span style="color:#8E1B30">never</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Leg</div><div class="bar-tr">
+            <div class="bar r" style="width:8.1%"></div><div class="bar s" style="width:4.4%"></div>
+          </div><div class="bar-vl"><em>3.2</em> / 1.8 %</div></div>
+          <div class="bar-row"><div class="bar-lb">Arm</div><div class="bar-tr">
+            <div class="bar r" style="width:7.2%"></div><div class="bar s" style="width:0.5%"></div>
+          </div><div class="bar-vl"><em>2.9</em> / 0.2 %</div></div>
+          <div class="bar-row"><div class="bar-lb">Breast</div><div class="bar-tr">
+            <div class="bar r" style="width:6.2%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>2.5</em> / <span style="color:#8E1B30">never</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Unknown</div><div class="bar-tr">
+            <div class="bar r" style="width:5.5%"></div><div class="bar s" style="width:48.1%"></div>
+          </div><div class="bar-vl"><em>2.2</em> / <span style="color:#8E1B30">19.5 %</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Heart</div><div class="bar-tr">
+            <div class="bar r" style="width:2.7%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>1.1</em> / <span style="color:#8E1B30">never</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Hip</div><div class="bar-tr">
+            <div class="bar r" style="width:2.7%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>1.1</em> / <span style="color:#8E1B30">never</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Other</div><div class="bar-tr">
+            <div class="bar r" style="width:1.9%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>0.7</em> / <span style="color:#8E1B30">never</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Chest</div><div class="bar-tr">
+            <div class="bar r" style="width:1.6%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>0.7</em> / <span style="color:#8E1B30">never</span></div></div>
+          <div class="bar-row"><div class="bar-lb">Whole body</div><div class="bar-tr">
+            <div class="bar r" style="width:0.7%"></div><div class="bar s" style="width:0"></div>
+          </div><div class="bar-vl"><em>0.3</em> / <span style="color:#8E1B30">never</span></div></div>
+        </div>
+      </div>
+      <div class="legend">
+        <span><i style="background:#00807F"></i>Real</span>
+        <span><i style="background:#C4560A"></i>Synthetic</span>
+      </div>
+    </div>
+
+    <div class="fail">
+      <div class="fail-hd">
+        <span class="fail-id">F3</span>
+        <h3>Scans run long, and the day silently loses patients</h3>
+        <span class="pill p-bad">Major</span>
+      </div>
+      <dl>
+        <dt>What we see</dt>
+        <dd><p>4.54% of generated scans exceed ten minutes; real data has 0.06%. The 99th
+        percentile is 1,205 s against 392 s, and the longest generated scan runs 66 minutes
+        against a real maximum of 19.</p></dd>
+        <dt>The downstream cost, which is the real problem</dt>
+        <dd><p>The day simulator caps a scanner's day at 13 hours. Because generated scans are
+        too long, that cap binds. In the most recent run it bound on <strong>16 of the 20
+        scanners</strong> and discarded <strong>969 patients</strong> — 13% of everything the
+        orchestration model had scheduled — plus 938 individual scans. One scanner hit the
+        cap on all 20 working days. Those patients do not appear in the output and nothing
+        downstream knows they existed.</p></dd>
+        <dt>The pause inside a visit</dt>
+        <dd><p>A real visit is 15.1 minutes of scanning inside 22.7 minutes of elapsed time —
+        a third of it is the operator repositioning, talking to the patient, changing coils.
+        The generator advanced the clock by the scan duration alone, so the next scan started
+        the instant the previous one ended. Commit <span class="m">c9e8604</span> puts the
+        pause back and the newest run reports 15&#8211;27% dead time against a real 30.4%.
+        <strong>The CSVs currently on disk predate that commit</strong> — measured, 100% of
+        their intra-visit gaps are exactly zero.</p></dd>
+      </dl>
+    </div>
+
+    <div class="fail minor">
+      <div class="fail-hd">
+        <span class="fail-id">F4</span>
+        <h3>Patient handovers lose their long tail</h3>
+        <span class="pill p-warn">Minor</span>
+      </div>
+      <dl>
+        <dt>What we see</dt>
+        <dd><p>The mean handover block is 520 s against a real 1,108 s, while the medians sit
+        close together (381 s against 455 s). The model reproduces the typical handover and
+        misses the rare very long one — a shift change, a lunch break, an equipment problem.
+        The event mix itself is correct, which is why this is cosmetic rather than structural.</p></dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= 5 ============================= -->
+<section class="pagebreak">
+  <div class="rail"><span class="num">05</span><span class="lbl">The decisive<br>experiment</span></div>
+  <div class="col">
+    <h2>One run settles F1</h2>
+    <p class="lead">Do not add more features. Three attempts in a row added inputs — TR, slice
+    count, then all 341 parameters — and the permutation result did not move once. The input
+    is not the problem. The <em>target</em> is.</p>
+
+    <p>The duration head has a shortcut: predict the protocol's average and stop. Remove that
+    shortcut from what it is asked to predict, and the parameters become the only route left.</p>
+
+    <h3>Two forms, pick one</h3>
+    <ol>
+      <li><strong>Residual training.</strong> Subtract the protocol mean from the target, so the
+      head learns only the part the operator changed — which is exactly the part the executed
+      parameters describe. Add the mean back at generation time.</li>
+      <li><strong>Full ablation.</strong> Build the model with no protocol tensors at all
+      (<span class="m">num_protocols=None</span>) and score it against the protocol oracle.
+      Cleaner to interpret, and it is the configuration that would actually ship.</li>
+    </ol>
+
+    <h3>The bar to clear</h3>
+    <p>Held-out error below <strong>16.2 s with the protocol name removed from the inputs</strong>.
+    Beating the previous checkpoint is not sufficient and never has been: a model can ignore a
+    new input entirely and still look improved, which is precisely what happened when TR and
+    slice count were added. The tabular fit says 9.7 s is reachable.</p>
+
+    <div class="note" style="border-left-color:var(--navy);background:var(--navy-wash)">
+      <div class="t" style="color:var(--navy)">The diagnostics are already written</div>
+      <p><span class="m">05_feature_analysis.py</span> prints the permutation ranking and
+      <span class="m">06_compare_models.py</span> prints the conditioning-path weight norm and
+      branches on it — trained-but-dead means an objective problem, zero-initialised means a
+      wiring problem. You do not need another exploratory cycle to know which branch you are
+      in; one training run plus those two notebooks gives the answer.</p>
+    </div>
+
+    <h3>Why Görtler's argument makes this worth doing</h3>
+    <p>If protocols ran exactly as saved, scan durations would vary by about a second. They
+    vary by fifteen <em>because</em> the operator adjusts after loading — pushing slice count
+    from 15 to 17 once the localiser shows the coverage, or dropping slices when a low-weight
+    patient triggers a specific-absorption-rate limit. The protocol name is the label from
+    before those adjustments. The parameters are what actually ran. Executed parameters should
+    therefore beat the name, not merely match it — and our own data confirms the premise:
+    within a single scanner-and-protocol group, slice thickness varies on 80.5% of scans and
+    repetition time on 56.7%. The message records what ran, not what was saved.</p>
+  </div>
+</section>
+
+<!-- ============================= 6 ============================= -->
+<section>
+  <div class="rail"><span class="num">06</span><span class="lbl">Next<br>steps</span></div>
+  <div class="col">
+    <h2>Ranked, with effort</h2>
+
+    <div class="step">
+      <div class="step-n">1</div>
+      <div>
+        <h4>Retrain the duration head on the residual target</h4>
+        <p>The blocking defect. Everything else is polish until this moves.</p>
+        <div class="meta"><span><b>Effort</b> one GPU training run (~25 min) plus two analysis notebooks</span><span><b>Fixes</b> F1</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">2</div>
+      <div>
+        <h4>Run step 03 with Spark and read the printed workflow keys</h4>
+        <p>The step already enumerates the keys actually present in the workflow map. Reading
+        that output names the field that should be feeding body part, and the fix is a
+        one-line change. This is the cheapest large win on the board.</p>
+        <div class="meta"><span><b>Effort</b> ~4 min of Spark, then one line</span><span><b>Fixes</b> F2 at source</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">3</div>
+      <div>
+        <h4>Widen the body-region vocabulary and retrain orchestration</h4>
+        <p>Add knee, shoulder, breast, heart and hip to <span class="m">BODY_REGIONS</span> and
+        extend the step-03 mapping. Eight of fifteen real groups are currently impossible to
+        generate — not unlikely, impossible.</p>
+        <div class="meta"><span><b>Effort</b> vocabulary edit plus one orchestration retrain</span><span><b>Fixes</b> F2</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">4</div>
+      <div>
+        <h4>Regenerate and re-bundle for Qlik on current main</h4>
+        <p>The shipped CSVs are behind the code by the intra-visit pause and the protocol
+        sampler. Martina's dashboard is currently judging an older model than the one in the
+        repository.</p>
+        <div class="meta"><span><b>Effort</b> one step-07 run plus <span class="m">consolidate.py</span></span><span><b>Fixes</b> F3 partly</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">5</div>
+      <div>
+        <h4>Chase the sequence-parameter join coverage</h4>
+        <p>The join between a scan and its parameters fires on 80.3% of segments. The other
+        19.7% fall back to the most recent earlier parameter row, which agrees with the truth
+        only 28.5% of the time, and that fallback alone moves the tabular error from 9.7 s to
+        24.6 s. <span class="m">03f_coverage_and_masking.py</span> is written, tested and has
+        never been run — it answers this in about ten minutes with no Spark.</p>
+        <div class="meta"><span><b>Effort</b> ~10 min, notebook already exists</span><span><b>Fixes</b> F1 headroom</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">6</div>
+      <div>
+        <h4>Reshape the duration tail and re-check the 13-hour day budget</h4>
+        <p>Truncation currently discards scheduled patients without surfacing it anywhere but a
+        log line. Either the tail shrinks or the budget needs a louder failure mode; ideally both.</p>
+        <div class="meta"><span><b>Effort</b> small</span><span><b>Fixes</b> F3</span></div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-n">7</div>
+      <div>
+        <h4>Give the handover model its long tail back</h4>
+        <p>Lowest priority. Visible on one dashboard chart, invisible everywhere else.</p>
+        <div class="meta"><span><b>Effort</b> small</span><span><b>Fixes</b> F4</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================= 7 ============================= -->
+<section class="pagebreak">
+  <div class="rail"><span class="num">07</span><span class="lbl">Running<br>it</span></div>
+  <div class="col">
+    <h2>The run order, and what will bite you</h2>
+
+    <div class="plate">
+      <div class="plate-hd">
+        <div class="t">Full cycle, in order</div>
+        <div class="s">Real data from <span class="m">csv_pipeline/</span>, models and generation from <span class="m">csv_pipeline_seqparams/</span></div>
+      </div>
+      <div class="plate-bd">
+        <div class="run">
+          <div class="run-row"><span class="run-n">01</span><span class="run-f">01_exchange_preprocessing</span><span class="run-d">Real handover CSVs &#183; zip download at the bottom</span></div>
+          <div class="run-row"><span class="run-n">02</span><span class="run-f">02_exam_preprocessing</span><span class="run-d">Real scan CSVs &#183; read the coverage summary it prints</span></div>
+          <div class="run-row"><span class="run-n">03</span><span class="run-f">03_build_preprocessed_pkl</span><span class="run-d">Spark, ~4 min &#183; builds the 414 MB training pickle</span></div>
+          <div class="run-row"><span class="run-n">04</span><span class="run-f">04_train_models</span><span class="run-d">GPU &#183; run from the top so the pre-flight cells execute</span></div>
+          <div class="run-row"><span class="run-n">05</span><span class="run-f">05_feature_analysis</span><span class="run-d">Permutation sweep &#183; which inputs are alive</span></div>
+          <div class="run-row"><span class="run-n">06</span><span class="run-f">06_compare_models</span><span class="run-d">The acceptance gate &#183; five numbered criteria</span></div>
+          <div class="run-row"><span class="run-n">07</span><span class="run-f">07_generate_synthetic_data</span><span class="run-d">CPU &#183; writes the synthetic CSVs per scanner</span></div>
+          <div class="run-row"><span class="run-n">08</span><span class="run-f">qlik/consolidate.py</span><span class="run-d">Local &#183; two files to drag into Qlik</span></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Five traps, each of which has cost a full day</h3>
+    <ul>
+      <li><strong>Push before you run.</strong> The notebooks clone <span class="m">origin/main</span>
+      from GitHub. Uncommitted local work simply does not exist to Databricks.</li>
+      <li><strong>Never <span class="m">%run</span> steps 01 or 02 from another notebook.</strong>
+      They begin with <span class="m">%pip install</span>, which restarts the Python process and
+      wipes the caller's state. It surfaces later as a misleading <span class="m">NameError</span>
+      in unrelated code.</li>
+      <li><strong>Databricks caches modules in a live kernel.</strong> Correct files on disk do
+      not mean correct code running. Step 04 purges <span class="m">sys.modules</span>; if you
+      add a notebook, purge too, or call <span class="m">dbutils.library.restartPython()</span>.
+      Three consecutive retrains produced byte-identical losses before this was found.</li>
+      <li><strong>Serving code takes its architecture from the checkpoint, never from
+      <span class="m">config.py</span>.</strong> Read <span class="m">MODEL_MANIFEST.json</span>
+      and <span class="m">protocol_vocab.json</span>. Omitting <span class="m">num_protocols</span>
+      is not an error — the checkpoint's protocol tensors are silently dropped as "unexpected"
+      and every prediction falls back to the rare bucket. That ran unnoticed for three weeks.</li>
+      <li><strong>A scanner with no exam CSV disappears three notebooks later.</strong> That is
+      why 21 configured serials produce 20 outputs — <span class="m">155687</span> has no rows in
+      the window, so step 03 writes no schedule for it and step 07 generates no days. Step 02 now
+      prints which scanners fell out; read it.</li>
+    </ul>
+
+    <h3>Refreshing the Qlik bundle</h3>
+    <p>Drop the per-scanner CSVs into <span class="m">qlik/data/real/{exchange,exam}/</span> and
+    <span class="m">qlik/data/synthetic/{exchange,exam}/</span>, stripping the browser's
+    <span class="m">(1)</span> suffix — plain <span class="m">DATA_&lt;serial&gt;.csv</span> is
+    the handover file, the <span class="m">(1)</span> copy is the scan file. Run
+    <span class="m">python consolidate.py</span>, then drag the two files it writes into Qlik and
+    hit reload. No chart edits, ever — the column names are prefixed deterministically so the
+    six chart expressions never change.</p>
+    <p>The 20 synthetic scanners from the 31 August run are already sorted into place in the
+    repository. The real side is waiting on the fresh 20-scanner extract.</p>
+  </div>
+</section>
+
+<!-- ============================= 8 ============================= -->
+<section>
+  <div class="rail"><span class="num">08</span><span class="lbl">The<br>map</span></div>
+  <div class="col">
+    <h2>Where everything lives</h2>
+
+    <div class="plate">
+      <div class="plate-bd">
+        <table>
+          <thead><tr><th style="width:38%">Path</th><th>What it is</th></tr></thead>
+          <tbody>
+            <tr><td class="k"><span class="m">AlternatingPipeline/</span></td><td>The models, training loops, data preparation and validation metrics. Pure Python; runs and tests locally.</td></tr>
+            <tr><td class="k"><span class="m">DatabricksPipeline/csv_pipeline/</span></td><td>Original pipeline. Owns the exchange and orchestration checkpoints and the real-data extracts.</td></tr>
+            <tr><td class="k"><span class="m">DatabricksPipeline/csv_pipeline_seqparams/</span></td><td>The fork carrying the sequence-parameter work. This is where the examination model now lives.</td></tr>
+            <tr><td class="k"><span class="m">.../qlik/</span></td><td>Dashboard how-to, <span class="m">consolidate.py</span>, and the landing zone for CSVs. The README carries the six chart specs and a graded scoreboard.</td></tr>
+            <tr><td class="k"><span class="m">tests/</span></td><td>24 files, 395 tests, all green. Several encode a specific past outage so it cannot silently return.</td></tr>
+            <tr><td class="k"><span class="m">presentation/</span></td><td>The three-year results deck. <span class="m">presentation/web/</span> is uncommitted.</td></tr>
+            <tr><td class="k"><span class="m">docs/</span>, <span class="m">_archive/</span></td><td>Architecture notes; superseded pipeline generations kept for reference.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h3>Honest list of what is not done</h3>
+    <div class="grid2">
+      <div class="mini">
+        <h4>No protocol-free accuracy number exists</h4>
+        <p>Every error figure quoted anywhere, including the 19.1 s above, comes from a model
+        that can see the protocol name. The number that decides whether this ships has never
+        been measured.</p>
+      </div>
+      <div class="mini">
+        <h4>03f has never been run</h4>
+        <p>Written, unit-tested, needs no Spark, answers the join-coverage question in about ten
+        minutes. It has simply never been executed on a cluster.</p>
+      </div>
+      <div class="mini">
+        <h4>The shipped CSVs lag the code</h4>
+        <p>Two generator fixes behind: the intra-visit pause and the protocol sampler. Verified
+        by measurement, not assumed.</p>
+      </div>
+      <div class="mini">
+        <h4>Uncommitted work in the tree</h4>
+        <p><span class="m">qlik/README.md</span> and <span class="m">qlik/consolidate.py</span>
+        carry local edits (label normalisation across the two sides), and
+        <span class="m">presentation/web/</span> is untracked. Deliberate — none of it was mine
+        to commit unreviewed.</p>
+      </div>
+    </div>
+
+    <div class="sign">
+      <p><strong>If I had one more month.</strong> I would spend the first day on step 2 above —
+      finding the real body-part field — because it is a one-line fix that unblocks the most
+      visible failure in the dashboard, and it is the kind of thing that stays broken for a year
+      because nobody believes it is that cheap. Then the rest of the month on F1, and only on
+      F1. The parameter work is either worth 8 seconds of accuracy or it is worth nothing, and
+      one honest ablation tells you which. Everything else on the list is a day's work that can
+      wait.</p>
+      <p>Thanks for three good years. — Luke</p>
+    </div>
+  </div>
+</section>
+
+</div>
