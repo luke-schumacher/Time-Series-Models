@@ -18,6 +18,7 @@
 
 import re
 import os
+import gc
 import time
 import numpy as np
 import pandas as pd
@@ -27,6 +28,21 @@ import logging
 logger = logging.getLogger("csv_pipeline.exam")
 os.makedirs(EXAM_OUTPUT_DIR, exist_ok=True)
 print(f"Output directory: {EXAM_OUTPUT_DIR}")
+
+# ---------------------------------------------------------------------------
+# Arrow for toPandas(). This is the memory fix, not a tuning knob.
+#
+# Without Arrow, toPandas() materialises every row as a Python Row object on
+# the driver before it builds the DataFrame. This loop pulls 56k-190k rows per
+# serial, so the peak is several times the size of the frame that survives,
+# and it is paid twice per serial (eventlog + examination_workflow). That is
+# what restarted the driver on 2026-08-31 after 11 of 21 serials.
+#
+# fallback.enabled keeps a column type Arrow cannot handle from becoming an
+# error: PySpark retries that conversion on the old path instead of failing.
+# ---------------------------------------------------------------------------
+spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
+spark.conf.set("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
 
 # ---- Lightweight section timing (see step 03 header for rationale) ----
 _TIMINGS = []
@@ -384,11 +400,54 @@ _t = time.perf_counter()
 # scanners against 21 configured, traced back to this loop.
 _OUTCOMES = {}
 
+# ---------------------------------------------------------------------------
+# RESUME. The written CSVs are the checkpoint.
+#
+# On 2026-08-31 the driver was restarted by Databricks partway through serial
+# 155687, after 11 serials had already been written. A restarted kernel loses
+# every Python name but none of the files, so without this the only way
+# forward was to re-run all 11 — each one a full eventlog scan plus a
+# six-figure-row toPandas().
+#
+# A serial whose CSV already exists WITH ROWS IN IT is skipped and its row
+# count recorded, so the coverage summary below still reports on all 21 after
+# a resumed run. A zero-row CSV is NOT treated as done: that is the 155687
+# failure mode this notebook exists to surface, and skipping it would hide it.
+#
+# Set RESUME=0 to force a full rebuild.
+# ---------------------------------------------------------------------------
+RESUME = os.environ.get('RESUME', '1') != '0'
+
+def _existing_rows(path):
+    """Row count of an already-written CSV, or None if there is not one.
+
+    Counts newlines rather than parsing. These files carry up to 90+ coil
+    columns and the only question being asked is whether this serial already
+    finished, so pandas would be the expensive way to ask it.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as handle:
+            return max(sum(1 for _ in handle) - 1, 0)   # minus the header
+    except OSError:
+        return None
+
+if RESUME:
+    print("RESUME=1 — serials with a non-empty CSV already on DBFS are skipped.")
+
 for serial_number in SERIAL_NUMBERS:
     print(f"\n{'='*60}")
     print(f"Processing serial: {serial_number}")
     print(f"{'='*60}")
     _OUTCOMES[serial_number] = 'no eventlog rows in window'
+
+    csv_path = f"{EXAM_OUTPUT_DIR}/DATA_{serial_number}.csv"
+    _done    = _existing_rows(csv_path) if RESUME else None
+    if _done:
+        _OUTCOMES[serial_number] = _done
+        print(f"  Already built ({_done:,} rows) — skipping. Set RESUME=0 to rebuild.")
+        continue
 
     # -------------------------------------------------------------------------
     # Load eventlog for this serial
@@ -596,10 +655,26 @@ for serial_number in SERIAL_NUMBERS:
     df['predicted_sigma']  = float('nan')
     df['sampled_duration'] = float('nan')
 
-    csv_path = f"{EXAM_OUTPUT_DIR}/DATA_{serial_number}.csv"
+    # csv_path was resolved at the top of this iteration, by the resume check.
     df.to_csv(csv_path, index=False, header=True)
     _OUTCOMES[serial_number] = len(df)
     print(f"  Saved {len(df):,} rows → {csv_path}")
+
+    # -------------------------------------------------------------------------
+    # Release the driver before the next serial
+    # -------------------------------------------------------------------------
+    # None of these are read after the CSV is written, but Python only frees a
+    # name when it is rebound, and the loop rebinds them at different points —
+    # so the biggest ones (pandas_df at up to 190k rows, df_ini after coil
+    # expansion at 90+ columns) stay live across the iteration boundary and
+    # overlap with the next serial's load. Dropping them explicitly means the
+    # driver holds one serial at a time instead of two.
+    for _name in ('pandas_df', 'result_spark', 'df_ini', 'df_select', 'df_pre',
+                  'df_sorted', 'df_drop', 'df', 'exam_df', 'exam_filtered',
+                  'exam_pdf', 's1', 's1b', 's3', 's3b',
+                  'mask1', 'mask2', 'mask3', 'mask4', 'mask5'):
+        globals().pop(_name, None)
+    gc.collect()
 
 print("\nExam preprocessing complete.")
 _timeit('per-serial loop', _t)

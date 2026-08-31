@@ -17,6 +17,7 @@
 
 import re
 import os
+import gc
 import time
 import numpy as np
 import pandas as pd
@@ -26,6 +27,27 @@ from pyspark.sql.types import StructType, StructField, StringType
 
 os.makedirs(EXCHANGE_OUTPUT_DIR, exist_ok=True)
 print(f"Output directory: {EXCHANGE_OUTPUT_DIR}")
+
+# ---------------------------------------------------------------------------
+# Arrow for toPandas(), and resume from the written CSVs. Same two fixes as
+# step 02, for the same reason — see that notebook's header for the incident.
+# Without Arrow, toPandas() builds a Python Row per row on the driver before
+# the DataFrame exists; this loop pulls a six-figure row count per serial.
+# ---------------------------------------------------------------------------
+spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
+spark.conf.set("spark.sql.execution.arrow.pyspark.fallback.enabled", "true")
+
+RESUME = os.environ.get('RESUME', '1') != '0'
+
+def _existing_rows(path):
+    """Row count of an already-written CSV, or None if there is not one."""
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as handle:
+            return max(sum(1 for _ in handle) - 1, 0)   # minus the header
+    except OSError:
+        return None
 
 # ---- Lightweight section timing (see step 03 header for rationale) ----
 _TIMINGS = []
@@ -336,10 +358,19 @@ _t = _timeit('spark.prepare', _t)
 # CELL: Per-serial processing loop
 # =============================================================================
 
+if RESUME:
+    print("RESUME=1 — serials with a non-empty CSV already on DBFS are skipped.")
+
 for serial_number in SERIAL_NUMBERS:
     print(f"\n{'='*60}")
     print(f"Processing serial: {serial_number}")
     print(f"{'='*60}")
+
+    csv_path = f"{EXCHANGE_OUTPUT_DIR}/DATA_{serial_number}.csv"
+    _done    = _existing_rows(csv_path) if RESUME else None
+    if _done:
+        print(f"  Already built ({_done:,} rows) — skipping. Set RESUME=0 to rebuild.")
+        continue
 
     # Query just this serial from Spark to avoid collecting the full month of
     # exchange rows to the driver up front.
@@ -525,9 +556,18 @@ for serial_number in SERIAL_NUMBERS:
     ]
     df_out = df_out[[c for c in _out_cols if c in df_out.columns]]
 
-    csv_path = f"{EXCHANGE_OUTPUT_DIR}/DATA_{serial_number}.csv"
+    # csv_path was resolved at the top of this iteration, by the resume check.
     df_out.to_csv(csv_path, index=False, header=True)
     print(f"  Saved {len(df_out):,} rows → {csv_path}")
+
+    # Release the driver before the next serial — see step 02 for why an
+    # explicit drop is needed rather than relying on rebinding.
+    for _name in ('df_sc', 'df_sorted', 'df_filter', 'df_join', 'df_bool',
+                  'df_ptab', 'df_coils', 'exchange', 'result', 'body_parts_mask',
+                  'df_filter_final', 'df_merged', 'df_out',
+                  'exam_df', 'exam_filtered', 'exam_pd'):
+        globals().pop(_name, None)
+    gc.collect()
 
 print("\nExchange preprocessing complete.")
 _timeit('per-serial loop', _t)
