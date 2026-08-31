@@ -538,3 +538,61 @@ print("-"*60)
 for _label, _dt in _TIMINGS:
     print(f"[timing] step01  {_label:<20} {_dt:9.1f}s")
 print(f"[timing] step01  {'TOTAL':<20} {sum(d for _, d in _TIMINGS):9.1f}s")
+
+# COMMAND ----------
+# =============================================================================
+# CELL: One zip, one download link
+#
+# Mirror of the cell at the end of 02_exam_preprocessing.py — see the rationale
+# there. The arcname prefix is `exchange/` so this archive and step 02's unzip
+# into qlik/data/real/ side by side: the two halves share filenames per scanner
+# and are distinguished only by their directory.
+# =============================================================================
+
+import zipfile
+import datetime as _date
+
+_stamp     = _date.date.today().isoformat()
+_zip_name  = f"exchange_csvs_{_stamp}.zip"
+_local_zip = f"/tmp/{_zip_name}"
+if os.path.exists(_local_zip):
+    os.remove(_local_zip)
+
+_written, _missing = 0, []
+with zipfile.ZipFile(_local_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as _zf:
+    for _serial in SERIAL_NUMBERS:
+        _src = f"{EXCHANGE_OUTPUT_DIR}/DATA_{_serial}.csv"
+        if not os.path.exists(_src):
+            _missing.append(_serial)
+            continue
+        _zf.write(_src, arcname=f"exchange/DATA_{_serial}.csv")
+        _written += 1
+    _zf.writestr("exchange/MANIFEST.txt", "\n".join([
+        f"generated : {_date.datetime.now().isoformat(timespec='seconds')}",
+        "source    : csv_pipeline/01_exchange_preprocessing.py",
+        f"window    : {DATE_START} .. {DATE_END}  (TZ +{TIMEZONE_OFFSET_HOURS}h)",
+        f"scanners  : {_written} of {len(SERIAL_NUMBERS)} configured",
+        f"no data   : {', '.join(str(x) for x in _missing) or '(none)'}",
+    ]) + "\n")
+
+_size_mb = os.path.getsize(_local_zip) / (1024 * 1024)
+dbutils.fs.mkdirs("dbfs:/FileStore/qlik_bundles")
+dbutils.fs.cp(f"file:{_local_zip}", f"dbfs:/FileStore/qlik_bundles/{_zip_name}")
+print(f"Zipped {_written} exchange CSV(s), {_size_mb:.1f} MB "
+      f"-> /dbfs/FileStore/qlik_bundles/{_zip_name}")
+if _missing:
+    print(f"NO DATA: {_missing}")
+
+displayHTML(f'''
+<h3>Exchange CSVs — {_zip_name}</h3>
+<p>{_written} of {len(SERIAL_NUMBERS)} scanners &nbsp;|&nbsp; {_size_mb:,.1f} MB
+   &nbsp;|&nbsp; {DATE_START} &rarr; {DATE_END}</p>
+<p style="font-size:1.15em;">
+  <a href="/files/qlik_bundles/{_zip_name}" download><b>&#11015; Download {_zip_name}</b></a>
+</p>
+<pre style="background:#f6f6f6; padding:10px; border-radius:4px;">
+cd DatabricksPipeline/csv_pipeline/qlik
+unzip -o ~/Downloads/{_zip_name} -d data/real/
+python consolidate.py
+</pre>
+''')

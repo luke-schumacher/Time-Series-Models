@@ -320,7 +320,7 @@ def order_cols(df, joint_coil_list):
     df_out          = pd.concat([df_out, move_coils], axis=1)
 
     for col_name in ['BodyPart', 'Sequence', 'ConnectedCoils', 'DOT',
-                     'PatientID', 'Protocol', 'SN', 'FinishEvent']:
+                     'PatientID', 'Protocol', 'SN', 'FinishEvent', 'sourceID']:
         if col_name in df.columns:
             df_out = pd.concat([df_out, df.pop(col_name)], axis=1)
 
@@ -369,10 +369,26 @@ print(f"Body mapping rows: {len(df_bp)}")
 # =============================================================================
 
 _t = time.perf_counter()
+# Per-serial outcome, printed as a summary after the loop.
+#
+# WHY THIS EXISTS. A serial that produces no exam CSV disappears silently: the
+# skip is one line in the middle of a 21-scanner run, and by the time it
+# matters the log has scrolled. It matters more than it looks, because
+# 03_build_preprocessed_pkl.py skips serials with no exam CSV when it builds
+# customer_schedules (03:913-916), and csv_pipeline_seqparams/07 generates one
+# synthetic scanner per customer_schedules key — so a scanner missing HERE is a
+# scanner missing from the synthetic half of the Qlik comparison, three
+# notebooks downstream, with nothing at that point to say why.
+#
+# That is exactly what happened to 155687 in the 2026-08-31 run: 20 synthetic
+# scanners against 21 configured, traced back to this loop.
+_OUTCOMES = {}
+
 for serial_number in SERIAL_NUMBERS:
     print(f"\n{'='*60}")
     print(f"Processing serial: {serial_number}")
     print(f"{'='*60}")
+    _OUTCOMES[serial_number] = 'no eventlog rows in window'
 
     # -------------------------------------------------------------------------
     # Load eventlog for this serial
@@ -434,7 +450,15 @@ for serial_number in SERIAL_NUMBERS:
         df_ini['sourceID'].isin(finish_keep) & (df_ini['FinishEvent'] != False)
     ]
     df_pre = df_select.copy()
-    df_pre.drop(columns=['sourceID', 'text'], axis=1, inplace=True)
+    # `text` is the raw log line and has served its purpose by here. `sourceID`
+    # is KEPT: it is the actual finish code this measurement ended on
+    # (MRI_MSR_104 on success, MRI_MSR_34/26/22/40/25/24 on the various aborts),
+    # and step 05/07 emit exactly that column on the synthetic side. Dropping it
+    # left the real half of the Qlik comparison with no sourceID at all, so
+    # qlik/consolidate.py had to reconstruct one from FinishEvent through a
+    # 5-entry map that folds every abort code into MRI_MSR_34 — an invented
+    # value standing in for one we had and threw away.
+    df_pre.drop(columns=['text'], axis=1, inplace=True)
 
     # -------------------------------------------------------------------------
     # Compute duration and sort
@@ -574,10 +598,39 @@ for serial_number in SERIAL_NUMBERS:
 
     csv_path = f"{EXAM_OUTPUT_DIR}/DATA_{serial_number}.csv"
     df.to_csv(csv_path, index=False, header=True)
+    _OUTCOMES[serial_number] = len(df)
     print(f"  Saved {len(df):,} rows → {csv_path}")
 
 print("\nExam preprocessing complete.")
 _timeit('per-serial loop', _t)
+
+# COMMAND ----------
+# =============================================================================
+# CELL: Coverage summary — which scanners actually produced a CSV
+# =============================================================================
+
+def _has_rows(r):
+    # A 0-row CSV is as damaging as a missing one: step 03 still writes a
+    # customer_schedules entry for it, but an empty one, and seqparams/07 then
+    # generates no days for that scanner. Both count as "no data" here.
+    return isinstance(r, int) and r > 0
+
+_ok      = [s for s, r in _OUTCOMES.items() if _has_rows(r)]
+_no_data = [s for s, r in _OUTCOMES.items() if not _has_rows(r)]
+
+print(f"{'serial':>8}  outcome")
+print("-" * 40)
+for _serial in SERIAL_NUMBERS:
+    _r = _OUTCOMES[_serial]
+    print(f"{_serial:>8}  {f'{_r:,} rows' if _has_rows(_r) else _r}")
+
+print(f"\n{len(_ok)}/{len(SERIAL_NUMBERS)} scanners produced an exam CSV.")
+if _no_data:
+    print(f"NO DATA: {_no_data}")
+    print("Each of these will also be absent from customer_schedules in step 03, "
+          "and therefore from the synthetic output of seqparams/07. Either widen "
+          "DATE_START..DATE_END for them or drop them from SERIAL_NUMBERS, so the "
+          "real and synthetic halves of the Qlik comparison cover the same set.")
 
 print("\n" + "-"*60)
 print("  TIMING BREAKDOWN")
@@ -585,3 +638,67 @@ print("-"*60)
 for _label, _dt in _TIMINGS:
     print(f"[timing] step02  {_label:<20} {_dt:9.1f}s")
 print(f"[timing] step02  {'TOTAL':<20} {sum(d for _, d in _TIMINGS):9.1f}s")
+
+# COMMAND ----------
+# =============================================================================
+# CELL: One zip, one download link
+#
+# The alternative is one browser click per scanner. At 21 scanners that is 21
+# downloads whose only distinguishing feature is the serial in the filename,
+# and the browser silently renames every collision to `DATA_x(1).csv` — which
+# is how the 2026-08-31 pull ended up with 40 files in one flat folder,
+# exchange and exam distinguishable only by a `(1)` suffix.
+#
+# Written to local disk first, then copied to FileStore: zipfile through the
+# /dbfs FUSE mount is unreliable at this size, and a truncated archive fails at
+# unzip time rather than here, where the cause is still on screen.
+# =============================================================================
+
+import zipfile
+import datetime as _date
+
+_stamp     = _date.date.today().isoformat()
+_zip_name  = f"exam_csvs_{_stamp}.zip"
+_local_zip = f"/tmp/{_zip_name}"
+if os.path.exists(_local_zip):
+    os.remove(_local_zip)
+
+_written = 0
+with zipfile.ZipFile(_local_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as _zf:
+    for _serial in SERIAL_NUMBERS:
+        _src = f"{EXAM_OUTPUT_DIR}/DATA_{_serial}.csv"
+        if not os.path.exists(_src):
+            continue
+        # arcname keeps the exam/ folder, so this zip and step 01's unzip into
+        # qlik/data/real/ side by side without either overwriting the other —
+        # the two halves share filenames and differ only by directory.
+        _zf.write(_src, arcname=f"exam/DATA_{_serial}.csv")
+        _written += 1
+    _zf.writestr("exam/MANIFEST.txt", "\n".join([
+        f"generated : {_date.datetime.now().isoformat(timespec='seconds')}",
+        "source    : csv_pipeline/02_exam_preprocessing.py",
+        f"window    : {DATE_START} .. {DATE_END}  (TZ +{TIMEZONE_OFFSET_HOURS}h)",
+        f"scanners  : {_written} of {len(SERIAL_NUMBERS)} configured",
+        f"serials   : {', '.join(str(x) for x in _ok)}",
+        f"no data   : {', '.join(str(x) for x in _no_data) or '(none)'}",
+    ]) + "\n")
+
+_size_mb = os.path.getsize(_local_zip) / (1024 * 1024)
+dbutils.fs.mkdirs("dbfs:/FileStore/qlik_bundles")
+dbutils.fs.cp(f"file:{_local_zip}", f"dbfs:/FileStore/qlik_bundles/{_zip_name}")
+print(f"Zipped {_written} exam CSV(s), {_size_mb:.1f} MB "
+      f"-> /dbfs/FileStore/qlik_bundles/{_zip_name}")
+
+displayHTML(f'''
+<h3>Exam CSVs — {_zip_name}</h3>
+<p>{_written} of {len(SERIAL_NUMBERS)} scanners &nbsp;|&nbsp; {_size_mb:,.1f} MB
+   &nbsp;|&nbsp; {DATE_START} &rarr; {DATE_END}</p>
+<p style="font-size:1.15em;">
+  <a href="/files/qlik_bundles/{_zip_name}" download><b>&#11015; Download {_zip_name}</b></a>
+</p>
+<pre style="background:#f6f6f6; padding:10px; border-radius:4px;">
+cd DatabricksPipeline/csv_pipeline/qlik
+unzip -o ~/Downloads/{_zip_name} -d data/real/
+python consolidate.py
+</pre>
+''')
